@@ -23,7 +23,17 @@ pub struct Mphf<const B: usize, const S: usize> {
     /// Ranked bits for efficient rank queries
     ranked_bits: RankedBits,
     /// Group sizes at each level
-    group_sizes: Box<[usize]>,
-    /// Group seeds at each level
+    level_group_sizes: Box<[usize]>,
+    /// Combined group seeds from all levels
     group_seeds: Box<[u16]>,
+}
+
+impl<const B: usize, const S: usize> Mphf<B, S> {
+    /// Returns the total number of bytes occupied by `Mphf`
+    pub fn size(&self) -> usize {
+        size_of_val(self)
+            + self.ranked_bits.size()
+            + self.level_group_sizes.len() * size_of::<usize>()
+            + self.group_seeds.len() * S / 8
+    }
 }

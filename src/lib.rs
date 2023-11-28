@@ -1,2 +1,2 @@
-mod mphf;
+pub mod mphf;
 mod rank;

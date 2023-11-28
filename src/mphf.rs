@@ -29,6 +29,25 @@ pub struct Mphf<const B: usize, const S: usize> {
 }
 
 impl<const B: usize, const S: usize> Mphf<B, S> {
+    /// Returns the index associated with `key`, within 0 to the key collection size (exclusive).
+    /// If `key` was not in the initial collection, returns `None` or an arbitrary value from the range.
+    #[inline]
+    pub fn get<K: Hash>(&self, key: &K) -> Option<usize> {
+        let mut groups_before = 0;
+        for (level, &groups) in self.level_group_sizes.iter().enumerate() {
+            let level_hash = hash_with_seed(hash_single(key), level as u32);
+            let group_idx = groups_before + group_idx(level_hash, groups);
+            let group_seed = self.group_seeds[group_idx];
+            let bit_idx = Self::bit_index_for_seed(level_hash, group_seed, group_idx * B);
+            if self.ranked_bits.get(bit_idx) {
+                return Some(self.ranked_bits.rank(bit_idx));
+            }
+            groups_before += groups;
+        }
+
+        return None;
+    }
+
     /// Returns the total number of bytes occupied by `Mphf`
     pub fn size(&self) -> usize {
         size_of_val(self)

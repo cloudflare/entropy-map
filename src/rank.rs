@@ -49,10 +49,7 @@ impl RankedBits {
             l12_ranks.push(l12_rank);
         }
 
-        RankedBits {
-            bits,
-            l12_ranks: l12_ranks.into_boxed_slice(),
-        }
+        RankedBits { bits, l12_ranks: l12_ranks.into_boxed_slice() }
     }
 
     /// Returns the number of set bits up to the given index.
@@ -70,10 +67,7 @@ impl RankedBits {
         let offset = (idx / L2_BIT_SIZE) * 8;
         let block = unsafe { self.bits.get_unchecked(offset..offset + blocks_num) };
 
-        let block_rank = block
-            .iter()
-            .map(|&x| x.count_ones() as usize)
-            .sum::<usize>();
+        let block_rank = block.iter().map(|&x| x.count_ones() as usize).sum::<usize>();
 
         let word = unsafe { *self.bits.get_unchecked(offset + blocks_num) };
         let word_mask = ((1u64 << (idx_within_l2 % 64)) - 1) * (idx_within_l2 > 0) as u64;

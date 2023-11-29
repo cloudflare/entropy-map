@@ -270,3 +270,87 @@ fn hash_with_seed(hash: u64, seed: u32) -> u64 {
 fn fastmod32(x: u32, n: u32) -> usize {
     (((x as u64) * (n as u64)) >> 32) as usize
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use paste::paste;
+    use std::collections::HashSet;
+    use test_case::test_case;
+
+    /// Helper function that contains the test logic
+    fn test_mphfs_impl<const B: usize, const S: usize>(n: usize, gamma: f32) -> String {
+        let keys = (0..n as u64).collect::<Vec<u64>>();
+        let mphf = Mphf::<B, S>::from_slice(&keys, gamma).expect("failed to create mphf");
+
+        // Ensure that all keys are assigned unique index which is less than `n`
+        let mut set = HashSet::with_capacity(n);
+        for key in &keys {
+            let idx = mphf.get(key).unwrap();
+            assert!(idx < n, "idx = {} n = {}", idx, n);
+            if !set.insert(idx) {
+                panic!("duplicate idx = {} for key {}", idx, key);
+            }
+        }
+        assert_eq!(set.len(), n);
+
+        // Compute average number of levels which needed to be accessed during `get`
+        let mut avg_levels = 0f32;
+        let total_groups: usize = mphf.level_groups.iter().sum();
+        for (i, &groups) in mphf.level_groups.iter().enumerate() {
+            avg_levels += (((i + 1) * groups) as f32) / (total_groups as f32);
+        }
+        let bits = mphf.size() as f32 * (8.0 / n as f32);
+
+        format!(
+            "bits: {:.2} total_levels: {} avg_levels: {:.2}",
+            bits,
+            mphf.level_groups.len(),
+            avg_levels
+        )
+    }
+
+    /// Macro to generate test functions for various B and S constants
+    macro_rules! generate_tests {
+        ($(($b:expr, $s:expr, $n: expr, $gamma:expr, $expected:expr)),* $(,)?) => {
+            $(
+                paste! {
+                    #[test_case($n, $gamma => $expected)]
+                    fn [<test_mphfs_ $b _ $s _ $n _ $gamma>](n: usize, gamma_scaled: usize) -> String {
+                        let gamma = (gamma_scaled as f32) / 100.0;
+                        test_mphfs_impl::<$b, $s>(n, gamma)
+                    }
+                }
+            )*
+        };
+    }
+
+    // Generate test functions for different combinations of B and S
+    generate_tests!(
+        (1, 8, 10000, 100, "bits: 24.63 total_levels: 16 avg_levels: 2.81"),
+        (2, 8, 10000, 100, "bits: 8.93 total_levels: 9 avg_levels: 1.78"),
+        (4, 8, 10000, 100, "bits: 4.31 total_levels: 6 avg_levels: 1.40"),
+        (7, 8, 10000, 100, "bits: 3.03 total_levels: 4 avg_levels: 1.33"),
+        (8, 8, 10000, 100, "bits: 2.73 total_levels: 4 avg_levels: 1.28"),
+        (15, 8, 10000, 100, "bits: 2.51 total_levels: 4 avg_levels: 1.50"),
+        (16, 8, 10000, 100, "bits: 2.30 total_levels: 6 avg_levels: 1.42"),
+        (23, 8, 10000, 100, "bits: 2.33 total_levels: 3 avg_levels: 1.45"),
+        (24, 8, 10000, 100, "bits: 2.27 total_levels: 6 avg_levels: 1.59"),
+        (31, 8, 10000, 100, "bits: 2.41 total_levels: 3 avg_levels: 1.44"),
+        (32, 8, 10000, 100, "bits: 2.21 total_levels: 7 avg_levels: 1.62"),
+        (33, 8, 10000, 100, "bits: 2.53 total_levels: 4 avg_levels: 1.78"),
+        (48, 8, 10000, 100, "bits: 2.27 total_levels: 7 avg_levels: 1.78"),
+        (53, 8, 10000, 100, "bits: 2.50 total_levels: 3 avg_levels: 1.67"),
+        (61, 8, 10000, 100, "bits: 2.83 total_levels: 4 avg_levels: 2.00"),
+        (63, 8, 10000, 100, "bits: 2.91 total_levels: 4 avg_levels: 2.00"),
+        (64, 8, 10000, 100, "bits: 2.27 total_levels: 8 avg_levels: 1.84"),
+        (32, 7, 10000, 100, "bits: 2.24 total_levels: 7 avg_levels: 1.68"),
+        (32, 5, 10000, 100, "bits: 2.30 total_levels: 8 avg_levels: 1.81"),
+        (32, 4, 10000, 100, "bits: 2.35 total_levels: 9 avg_levels: 1.92"),
+        (32, 3, 10000, 100, "bits: 2.43 total_levels: 10 avg_levels: 2.04"),
+        (32, 1, 10000, 100, "bits: 2.70 total_levels: 12 avg_levels: 2.39"),
+        (32, 0, 10000, 100, "bits: 3.00 total_levels: 14 avg_levels: 2.72"),
+        (32, 8, 100000, 100, "bits: 2.10 total_levels: 9 avg_levels: 1.63"),
+        (32, 8, 100000, 200, "bits: 2.71 total_levels: 4 avg_levels: 1.05"),
+    );
+}

@@ -8,6 +8,7 @@
 //! storage mechanism and reducing the construction time and querying latency of MPHF.
 
 use std::hash::{Hash, Hasher};
+use std::marker::PhantomData;
 use std::mem::{size_of, size_of_val};
 
 use fxhash::FxHasher;
@@ -20,13 +21,15 @@ use crate::rank::RankedBits;
 /// Parameters `B` and `S` represent the following:
 /// - `B`: group size in bits in [1..64] range
 /// - `S`: defines maximum seed value to try (2^S) in [0..15] range
-pub struct Mphf<const B: usize, const S: usize> {
+pub struct Mphf<const B: usize, const S: usize, H: Hasher + Default = FxHasher> {
     /// Ranked bits for efficient rank queries
     ranked_bits: RankedBits,
     /// Group sizes at each level
     level_groups: Box<[usize]>,
     /// Combined group seeds from all levels
     group_seeds: Box<[u16]>,
+    /// Phantom field for the hasher
+    _phantom_hasher: std::marker::PhantomData<H>,
 }
 
 const MAX_LEVELS: usize = 32;
@@ -44,7 +47,7 @@ pub enum MphfError {
     InvalidGammaParameter,
 }
 
-impl<const B: usize, const S: usize> Mphf<B, S> {
+impl<const B: usize, const S: usize, H: Hasher + Default> Mphf<B, S, H> {
     /// Initializes `Mphf` using slice of `keys` and parameter `gamma`.
     pub fn from_slice<K: Hash>(keys: &[K], gamma: f32) -> Result<Self, MphfError> {
         if B < 1 || B > 64 {
@@ -59,7 +62,7 @@ impl<const B: usize, const S: usize> Mphf<B, S> {
             return Err(InvalidGammaParameter);
         }
 
-        let mut hashes: Vec<u64> = keys.iter().map(|key| hash_single(key)).collect();
+        let mut hashes: Vec<u64> = keys.iter().map(|key| Self::hash_key(key)).collect();
         let mut group_bits = vec![];
         let mut group_seeds = vec![];
         let mut level_groups = vec![];
@@ -82,6 +85,7 @@ impl<const B: usize, const S: usize> Mphf<B, S> {
             ranked_bits: RankedBits::new(group_bits.into_boxed_slice()),
             level_groups: level_groups.into_boxed_slice(),
             group_seeds: group_seeds.into_boxed_slice(),
+            _phantom_hasher: PhantomData,
         })
     }
 
@@ -121,7 +125,7 @@ impl<const B: usize, const S: usize> Mphf<B, S> {
         // filter out hashes which are already stored in `best_group_bits`
         hashes.retain(|&hash| {
             let level_hash = hash_with_seed(hash, level);
-            let group_idx = fastmod_32(level_hash as u32, groups as u32);
+            let group_idx = fastmod32(level_hash as u32, groups as u32);
             let group_seed = best_group_seeds[group_idx];
             let bit_idx = Self::bit_index_for_seed(level_hash, group_seed, group_idx);
             !get_bit(&best_group_bits, bit_idx)
@@ -160,7 +164,7 @@ impl<const B: usize, const S: usize> Mphf<B, S> {
         // For each hash compute group bits and collision bits
         for &hash in hashes {
             let level_hash = hash_with_seed(hash, level);
-            let group_idx = fastmod_32(level_hash as u32, groups as u32);
+            let group_idx = fastmod32(level_hash as u32, groups as u32);
             let bit_idx = Self::bit_index_for_seed(level_hash, group_seed, group_idx);
             let mask = 1 << (bit_idx % 64);
             let idx = (bit_idx / 64) * 3;
@@ -218,7 +222,7 @@ impl<const B: usize, const S: usize> Mphf<B, S> {
         x = (x ^ (x >> 13)).wrapping_mul(0xc2b2ae35);
         x ^= x >> 16;
 
-        groups_before * B + fastmod_32(x, B as u32)
+        groups_before * B + fastmod32(x, B as u32)
     }
 
     /// Returns the index associated with `key`, within 0 to the key collection size (exclusive).
@@ -227,8 +231,8 @@ impl<const B: usize, const S: usize> Mphf<B, S> {
     pub fn get<K: Hash>(&self, key: &K) -> Option<usize> {
         let mut groups_before = 0;
         for (level, &groups) in self.level_groups.iter().enumerate() {
-            let level_hash = hash_with_seed(hash_single(key), level as u32);
-            let group_idx = groups_before + fastmod_32(level_hash as u32, groups as u32);
+            let level_hash = hash_with_seed(Self::hash_key(key), level as u32);
+            let group_idx = groups_before + fastmod32(level_hash as u32, groups as u32);
             let group_seed = self.group_seeds[group_idx];
             let bit_idx = Self::bit_index_for_seed(level_hash, group_seed, group_idx);
             if self.ranked_bits.get(bit_idx) {
@@ -247,4 +251,26 @@ impl<const B: usize, const S: usize> Mphf<B, S> {
             + self.level_groups.len() * size_of::<usize>()
             + self.group_seeds.len() * S / 8
     }
+
+    /// Computes a 64-bit hash for the given key using the default hasher `H`.
+    #[inline]
+    fn hash_key<T: Hash>(key: &T) -> u64 {
+        let mut hasher = H::default();
+        key.hash(&mut hasher);
+        hasher.finish()
+    }
+}
+
+/// Combines a 64-bit hash with a 32-bit seed, then multiplies by a prime constant to enhance hash uniformity and reduces the result back to 64 bits.
+#[inline]
+fn hash_with_seed(hash: u64, seed: u32) -> u64 {
+    let x = ((hash as u128) ^ (seed as u128)).wrapping_mul(0x5851f42d4c957f2d);
+    ((x & 0xFFFFFFFFFFFFFFFF) as u64) ^ ((x >> 64) as u64)
+}
+
+/// A fast alternative to the modulo reduction
+/// More details: https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
+#[inline]
+fn fastmod32(x: u32, n: u32) -> usize {
+    (((x as u64) * (n as u64)) >> 32) as usize
 }

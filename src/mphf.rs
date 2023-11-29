@@ -85,6 +85,61 @@ impl<const B: usize, const S: usize> Mphf<B, S> {
         })
     }
 
+    /// Builds specified `level` using provided `hashes` and returns level group bits and seeds.
+    fn build_level(level: u32, hashes: &mut Vec<u64>, gamma: f32) -> (Vec<u64>, Vec<u16>) {
+        // compute level size (#bits storing non-collided hashes), number of groups and segments
+        let level_size = ((hashes.len() as f32) * gamma).ceil() as usize;
+        let (groups, segments) = Self::level_size_groups_segments(level_size);
+        let max_group_seed = 1 << S;
+
+        // Reserve x3 bits for all segments to reduce cache misses when updating/fetching group bits.
+        // Every 3 consecutive elements represent:
+        // - 0: hashes bits set for current seed
+        // - 1: hashes collision bits set for current seed
+        // - 2: hashes bits set for best seed
+        let mut group_bits = vec![0u64; 3 * segments];
+        let mut best_group_seeds = vec![0u16; groups];
+
+        // For each seed compute `group_bits` and then update those groups where seed produced less collisions
+        for group_seed in 0..max_group_seed {
+            Self::update_group_bits_with_seed(
+                level,
+                groups,
+                group_seed,
+                &hashes,
+                &mut group_bits,
+                &mut best_group_seeds,
+            );
+        }
+
+        // finalize best group bits to be returned
+        let best_group_bits: Vec<u64> = group_bits
+            .chunks_exact(3)
+            .map(|group_bits| group_bits[2])
+            .collect();
+
+        // filter out hashes which are already stored in `best_group_bits`
+        hashes.retain(|&hash| {
+            let level_hash = hash_with_seed(hash, level);
+            let group_idx = Self::group_idx(level_hash, groups);
+            let group_seed = best_group_seeds[group_idx];
+            let bit_idx = Self::bit_index_for_seed(level_hash, group_seed, group_idx);
+            !get_bit(&best_group_bits, bit_idx)
+        });
+
+        (best_group_bits, best_group_seeds)
+    }
+
+    /// Returns number of groups and 64-bit segments for given `size`.
+    fn level_size_groups_segments(size: usize) -> (usize, usize) {
+        // Adjust size to the nearest value that is a multiple of both 64 and B
+        let mut adjusted_size = size.div_ceil(64) * 64;
+        while adjusted_size % B != 0 {
+            adjusted_size += 64;
+        }
+        (adjusted_size / B, adjusted_size / 64)
+    }
+
     /// Returns the index associated with `key`, within 0 to the key collection size (exclusive).
     /// If `key` was not in the initial collection, returns `None` or an arbitrary value from the range.
     #[inline]

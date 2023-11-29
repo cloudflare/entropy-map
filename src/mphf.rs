@@ -121,7 +121,7 @@ impl<const B: usize, const S: usize> Mphf<B, S> {
         // filter out hashes which are already stored in `best_group_bits`
         hashes.retain(|&hash| {
             let level_hash = hash_with_seed(hash, level);
-            let group_idx = Self::group_idx(level_hash, groups);
+            let group_idx = fastmod_32(level_hash as u32, groups as u32);
             let group_seed = best_group_seeds[group_idx];
             let bit_idx = Self::bit_index_for_seed(level_hash, group_seed, group_idx);
             !get_bit(&best_group_bits, bit_idx)
@@ -131,6 +131,7 @@ impl<const B: usize, const S: usize> Mphf<B, S> {
     }
 
     /// Returns number of groups and 64-bit segments for given `size`.
+    #[inline]
     fn level_size_groups_segments(size: usize) -> (usize, usize) {
         // Adjust size to the nearest value that is a multiple of both 64 and B
         let mut adjusted_size = size.div_ceil(64) * 64;
@@ -140,6 +141,86 @@ impl<const B: usize, const S: usize> Mphf<B, S> {
         (adjusted_size / B, adjusted_size / 64)
     }
 
+    /// Computes group bits for given seed and then updates those groups where seed produced least collisions.
+    #[inline]
+    fn update_group_bits_with_seed(
+        level: u32,
+        groups: usize,
+        group_seed: u16,
+        hashes: &[u64],
+        group_bits: &mut [u64],
+        best_group_seeds: &mut [u16],
+    ) {
+        // Reset all group bits except best group bits
+        for bits in group_bits.chunks_exact_mut(3) {
+            bits[0] = 0;
+            bits[1] = 0;
+        }
+
+        // For each hash compute group bits and collision bits
+        for &hash in hashes {
+            let level_hash = hash_with_seed(hash, level);
+            let group_idx = fastmod_32(level_hash as u32, groups as u32);
+            let bit_idx = Self::bit_index_for_seed(level_hash, group_seed, group_idx);
+            let mask = 1 << (bit_idx % 64);
+            let idx = (bit_idx / 64) * 3;
+            let bits = unsafe { group_bits.get_unchecked_mut(idx..idx + 2) };
+
+            bits[1] |= bits[0] & mask;
+            bits[0] |= mask;
+        }
+
+        // Filter out collided bits from group bits
+        for bits in group_bits.chunks_exact_mut(3) {
+            bits[0] &= !bits[1];
+        }
+
+        // Update best group bits and seeds
+        for (group_idx, best_group_seed) in best_group_seeds.iter_mut().enumerate() {
+            let bit_idx = group_idx * B;
+            let bit_pos = bit_idx % 64;
+            let idx = (bit_idx / 64) * 3;
+
+            let bits = unsafe { group_bits.get_unchecked_mut(idx..idx + 6) };
+
+            let bits_1 = B.min(64 - bit_pos);
+            let bits_2 = B - bits_1;
+            let mask_1 = u64::MAX >> (64 - bits_1);
+            let mask_2 = (1 << bits_2) - 1;
+
+            let new_bits_1 = (bits[0] >> bit_pos) & mask_1;
+            let new_bits_2 = bits[3] & mask_2;
+            let new_ones = new_bits_1.count_ones() + new_bits_2.count_ones();
+
+            let best_bits_1 = (bits[2] >> bit_pos) & mask_1;
+            let best_bits_2 = bits[5] & mask_2;
+            let best_ones = best_bits_1.count_ones() + best_bits_2.count_ones();
+
+            if new_ones > best_ones {
+                bits[2] &= !(mask_1 << bit_pos);
+                bits[2] |= new_bits_1 << bit_pos;
+
+                bits[5] &= !mask_2;
+                bits[5] |= new_bits_2;
+
+                *best_group_seed = group_seed;
+            }
+        }
+    }
+
+    #[inline]
+    fn bit_index_for_seed(hash: u64, group_seed: u16, groups_before: usize) -> usize {
+        // Take the lower 32 bits of the hash and XOR with the group_seed
+        let mut x = (hash as u32) ^ (group_seed as u32);
+
+        // MurmurHash3's finalizer step to avalanche the bits
+        x = (x ^ (x >> 16)).wrapping_mul(0x85ebca6b);
+        x = (x ^ (x >> 13)).wrapping_mul(0xc2b2ae35);
+        x ^= x >> 16;
+
+        groups_before * B + fastmod_32(x, B as u32)
+    }
+
     /// Returns the index associated with `key`, within 0 to the key collection size (exclusive).
     /// If `key` was not in the initial collection, returns `None` or an arbitrary value from the range.
     #[inline]
@@ -147,7 +228,7 @@ impl<const B: usize, const S: usize> Mphf<B, S> {
         let mut groups_before = 0;
         for (level, &groups) in self.level_groups.iter().enumerate() {
             let level_hash = hash_with_seed(hash_single(key), level as u32);
-            let group_idx = groups_before + Self::group_idx(level_hash, groups);
+            let group_idx = groups_before + fastmod_32(level_hash as u32, groups as u32);
             let group_seed = self.group_seeds[group_idx];
             let bit_idx = Self::bit_index_for_seed(level_hash, group_seed, group_idx);
             if self.ranked_bits.get(bit_idx) {

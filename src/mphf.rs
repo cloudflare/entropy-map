@@ -69,8 +69,7 @@ impl<const B: usize, const S: usize, H: Hasher + Default> Mphf<B, S, H> {
 
         while !hashes.is_empty() {
             let level = level_groups.len() as u32;
-            let (level_group_bits, level_group_seeds) =
-                Self::build_level(level, &mut hashes, gamma);
+            let (level_group_bits, level_group_seeds) = Self::build_level(level, &mut hashes, gamma);
 
             group_bits.extend_from_slice(&level_group_bits);
             group_seeds.extend_from_slice(&level_group_seeds);
@@ -117,10 +116,7 @@ impl<const B: usize, const S: usize, H: Hasher + Default> Mphf<B, S, H> {
         }
 
         // finalize best group bits to be returned
-        let best_group_bits: Vec<u64> = group_bits
-            .chunks_exact(3)
-            .map(|group_bits| group_bits[2])
-            .collect();
+        let best_group_bits: Vec<u64> = group_bits.chunks_exact(3).map(|group_bits| group_bits[2]).collect();
 
         // filter out hashes which are already stored in `best_group_bits`
         hashes.retain(|&hash| {

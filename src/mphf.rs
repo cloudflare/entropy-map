@@ -128,7 +128,7 @@ impl<const B: usize, const S: usize, H: Hasher + Default> Mphf<B, S, H> {
             let group_idx = fastmod32(level_hash as u32, groups as u32);
             let group_seed = best_group_seeds[group_idx];
             let bit_idx = Self::bit_index_for_seed(level_hash, group_seed, group_idx);
-            !get_bit(&best_group_bits, bit_idx)
+            *unsafe { best_group_bits.get_unchecked(bit_idx / 64) } & (1 << (bit_idx % 64)) == 0
         });
 
         (best_group_bits, best_group_seeds)

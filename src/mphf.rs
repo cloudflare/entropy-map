@@ -12,6 +12,7 @@ use std::marker::PhantomData;
 use std::mem::{size_of, size_of_val};
 
 use fxhash::FxHasher;
+use num::{PrimInt, Unsigned};
 
 use crate::mphf::MphfError::*;
 use crate::rank::RankedBits;
@@ -20,16 +21,16 @@ use crate::rank::RankedBits;
 ///
 /// Parameters `B` and `S` represent the following:
 /// - `B`: group size in bits in [1..64] range
-/// - `S`: defines maximum seed value to try (2^S) in [0..15] range
-pub struct Mphf<const B: usize, const S: usize, H: Hasher + Default = FxHasher> {
+/// - `S`: defines maximum seed value to try (2^S) in [0..16] range
+pub struct Mphf<const B: usize, const S: usize, ST: PrimInt + Unsigned = u8, H: Hasher + Default = FxHasher> {
     /// Ranked bits for efficient rank queries
     ranked_bits: RankedBits,
     /// Group sizes at each level
     level_groups: Box<[usize]>,
     /// Combined group seeds from all levels
-    group_seeds: Box<[u16]>,
+    group_seeds: Box<[ST]>,
     /// Phantom field for the hasher
-    _phantom_hasher: std::marker::PhantomData<H>,
+    _phantom_hasher: PhantomData<H>,
 }
 
 const MAX_LEVELS: usize = 32;
@@ -41,25 +42,31 @@ pub enum MphfError {
     MaxLevelsExceeded,
     /// Error when the parameter `B` is out of the [1..64] range.
     InvalidBParameter,
-    /// Error when the parameter `S` is out of the [0..15] range.
+    /// Error when the parameter `S` is out of the [0..16] range.
     InvalidSParameter,
+    /// Error when the seed type `ST` is too small to store `S` bits
+    InvalidSeedType,
     /// Error when the `gamma` parameter is less than 1.0.
     InvalidGammaParameter,
 }
 
-impl<const B: usize, const S: usize, H: Hasher + Default> Mphf<B, S, H> {
+impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default> Mphf<B, S, ST, H> {
     /// Initializes `Mphf` using slice of `keys` and parameter `gamma`.
     pub fn from_slice<K: Hash>(keys: &[K], gamma: f32) -> Result<Self, MphfError> {
         if B < 1 || B > 64 {
             return Err(InvalidBParameter);
         }
 
-        if S > 15 {
+        if S > 16 {
             return Err(InvalidSParameter);
         }
 
         if gamma < 1.0 {
             return Err(InvalidGammaParameter);
+        }
+
+        if ST::max_value().to_u32().unwrap() + 1 < 1 << S {
+            return Err(InvalidSeedType);
         }
 
         let mut hashes: Vec<u64> = keys.iter().map(|key| Self::hash_key(key)).collect();
@@ -89,7 +96,7 @@ impl<const B: usize, const S: usize, H: Hasher + Default> Mphf<B, S, H> {
     }
 
     /// Builds specified `level` using provided `hashes` and returns level group bits and seeds.
-    fn build_level(level: u32, hashes: &mut Vec<u64>, gamma: f32) -> (Vec<u64>, Vec<u16>) {
+    fn build_level(level: u32, hashes: &mut Vec<u64>, gamma: f32) -> (Vec<u64>, Vec<ST>) {
         // compute level size (#bits storing non-collided hashes), number of groups and segments
         let level_size = ((hashes.len() as f32) * gamma).ceil() as usize;
         let (groups, segments) = Self::level_size_groups_segments(level_size);
@@ -101,14 +108,14 @@ impl<const B: usize, const S: usize, H: Hasher + Default> Mphf<B, S, H> {
         // - 1: hashes collision bits set for current seed
         // - 2: hashes bits set for best seed
         let mut group_bits = vec![0u64; 3 * segments];
-        let mut best_group_seeds = vec![0u16; groups];
+        let mut best_group_seeds = vec![ST::zero(); groups];
 
         // For each seed compute `group_bits` and then update those groups where seed produced less collisions
         for group_seed in 0..max_group_seed {
             Self::update_group_bits_with_seed(
                 level,
                 groups,
-                group_seed,
+                ST::from(group_seed).unwrap(),
                 &hashes,
                 &mut group_bits,
                 &mut best_group_seeds,
@@ -146,10 +153,10 @@ impl<const B: usize, const S: usize, H: Hasher + Default> Mphf<B, S, H> {
     fn update_group_bits_with_seed(
         level: u32,
         groups: usize,
-        group_seed: u16,
+        group_seed: ST,
         hashes: &[u64],
         group_bits: &mut [u64],
-        best_group_seeds: &mut [u16],
+        best_group_seeds: &mut [ST],
     ) {
         // Reset all group bits except best group bits
         for bits in group_bits.chunks_exact_mut(3) {
@@ -209,9 +216,9 @@ impl<const B: usize, const S: usize, H: Hasher + Default> Mphf<B, S, H> {
     }
 
     #[inline]
-    fn bit_index_for_seed(hash: u64, group_seed: u16, groups_before: usize) -> usize {
+    fn bit_index_for_seed(hash: u64, group_seed: ST, groups_before: usize) -> usize {
         // Take the lower 32 bits of the hash and XOR with the group_seed
-        let mut x = (hash as u32) ^ (group_seed as u32);
+        let mut x = (hash as u32) ^ group_seed.to_u32().unwrap();
 
         // MurmurHash3's finalizer step to avalanche the bits
         x = (x ^ (x >> 16)).wrapping_mul(0x85ebca6b);
@@ -245,7 +252,7 @@ impl<const B: usize, const S: usize, H: Hasher + Default> Mphf<B, S, H> {
         size_of_val(self)
             + self.ranked_bits.size()
             + self.level_groups.len() * size_of::<usize>()
-            + self.group_seeds.len() * S / 8
+            + self.group_seeds.len() * size_of::<ST>()
     }
 
     /// Computes a 64-bit hash for the given key using the default hasher `H`.
@@ -344,12 +351,12 @@ mod tests {
         (61, 8, 10000, 100, "bits: 2.83 total_levels: 4 avg_levels: 2.00"),
         (63, 8, 10000, 100, "bits: 2.91 total_levels: 4 avg_levels: 2.00"),
         (64, 8, 10000, 100, "bits: 2.27 total_levels: 8 avg_levels: 1.84"),
-        (32, 7, 10000, 100, "bits: 2.24 total_levels: 7 avg_levels: 1.68"),
-        (32, 5, 10000, 100, "bits: 2.30 total_levels: 8 avg_levels: 1.81"),
-        (32, 4, 10000, 100, "bits: 2.35 total_levels: 9 avg_levels: 1.92"),
-        (32, 3, 10000, 100, "bits: 2.43 total_levels: 10 avg_levels: 2.04"),
-        (32, 1, 10000, 100, "bits: 2.70 total_levels: 12 avg_levels: 2.39"),
-        (32, 0, 10000, 100, "bits: 3.00 total_levels: 14 avg_levels: 2.72"),
+        (32, 7, 10000, 100, "bits: 2.30 total_levels: 7 avg_levels: 1.68"),
+        (32, 5, 10000, 100, "bits: 2.47 total_levels: 8 avg_levels: 1.81"),
+        (32, 4, 10000, 100, "bits: 2.59 total_levels: 9 avg_levels: 1.92"),
+        (32, 3, 10000, 100, "bits: 2.75 total_levels: 10 avg_levels: 2.04"),
+        (32, 1, 10000, 100, "bits: 3.22 total_levels: 12 avg_levels: 2.39"),
+        (32, 0, 10000, 100, "bits: 3.68 total_levels: 14 avg_levels: 2.72"),
         (32, 8, 100000, 100, "bits: 2.10 total_levels: 9 avg_levels: 1.63"),
         (32, 8, 100000, 200, "bits: 2.71 total_levels: 4 avg_levels: 1.05"),
     );

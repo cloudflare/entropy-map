@@ -19,10 +19,12 @@ use crate::rank::RankedBits;
 
 /// A Minimal Perfect Hash Function (MPHF).
 ///
-/// Parameters `B` and `S` represent the following:
-/// - `B`: group size in bits in [1..64] range
-/// - `S`: defines maximum seed value to try (2^S) in [0..16] range
-pub struct Mphf<const B: usize, const S: usize, ST: PrimInt + Unsigned = u8, H: Hasher + Default = FxHasher> {
+/// Template parameters:
+/// - `B`: group size in bits in [1..64] range, default 32 bits.
+/// - `S`: defines maximum seed value to try (2^S) in [0..16] range, default 8.
+/// - `ST`: seed type (unsigned integer), default `u8`.
+/// - `H`: hasher used to hash keys, default `FxHasher`.
+pub struct Mphf<const B: usize = 32, const S: usize = 8, ST: PrimInt + Unsigned = u8, H: Hasher + Default = FxHasher> {
     /// Ranked bits for efficient rank queries
     ranked_bits: RankedBits,
     /// Group sizes at each level
@@ -33,6 +35,7 @@ pub struct Mphf<const B: usize, const S: usize, ST: PrimInt + Unsigned = u8, H: 
     _phantom_hasher: PhantomData<H>,
 }
 
+/// Maximum number of levels to build for MPHF.
 const MAX_LEVELS: usize = 32;
 
 /// Errors that can occur when initializing `Mphf`.
@@ -65,7 +68,7 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
             return Err(InvalidGammaParameter);
         }
 
-        if ST::max_value().to_u32().unwrap() + 1 < 1 << S {
+        if ST::from((1 << S) - 1).is_none() {
             return Err(InvalidSeedType);
         }
 

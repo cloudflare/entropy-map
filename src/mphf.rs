@@ -239,7 +239,7 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
         for (level, &groups) in self.level_groups.iter().enumerate() {
             let level_hash = hash_with_seed(Self::hash_key(key), level as u32);
             let group_idx = groups_before + fastmod32(level_hash as u32, groups as u32);
-            let group_seed = self.group_seeds[group_idx];
+            let group_seed = unsafe { *self.group_seeds.get_unchecked(group_idx) };
             let bit_idx = Self::bit_index_for_seed(level_hash, group_seed, group_idx);
             if self.ranked_bits.get(bit_idx) {
                 return Some(self.ranked_bits.rank(bit_idx));

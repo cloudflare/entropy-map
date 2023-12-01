@@ -12,7 +12,7 @@ use std::marker::PhantomData;
 use std::mem::{size_of, size_of_val};
 
 use fxhash::FxHasher;
-use num::{PrimInt, Unsigned};
+use num::{Integer, PrimInt, Unsigned};
 
 use crate::mphf::MphfError::*;
 use crate::rank::RankedBits;
@@ -143,11 +143,12 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
     /// Returns number of groups and 64-bit segments for given `size`.
     #[inline]
     fn level_size_groups_segments(size: usize) -> (usize, usize) {
-        // Adjust size to the nearest value that is a multiple of both 64 and B
-        let mut adjusted_size = size.div_ceil(64) * 64;
-        while adjusted_size % B != 0 {
-            adjusted_size += 64;
-        }
+        // Calculate the least common multiple of 64 and B
+        let lcm_value = B.lcm(&64);
+
+        // Adjust size to the nearest value that is a multiple of the LCM
+        let adjusted_size = size.div_ceil(lcm_value) * lcm_value;
+
         (adjusted_size / B, adjusted_size / 64)
     }
 

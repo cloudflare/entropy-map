@@ -8,14 +8,22 @@
 //! construction, otherwise `None` is returned.
 
 use std::collections::HashMap;
-use std::hash::Hash;
+use std::hash::{Hash, Hasher};
 use std::mem::{size_of, size_of_val};
+
+use fxhash::FxHasher;
+use num::{PrimInt, Unsigned};
 
 use crate::mphf::{Error, Mphf};
 
-pub struct MapWithDict<K, V> {
+/// An efficient, immutable hash map with values dictionary-packed for optimized space usage.
+pub struct MapWithDict<K, V, const B: usize = 32, const S: usize = 8, ST = u8, H = FxHasher>
+where
+    ST: PrimInt + Unsigned,
+    H: Hasher + Default,
+{
     /// Minimally Perfect Hash Function for keys indices retrieval
-    pub(crate) mphf: Mphf,
+    pub(crate) mphf: Mphf<B, S, ST, H>,
     /// Map keys
     pub(crate) keys: Box<[K]>,
     /// Points to the value index in the dictionary
@@ -29,8 +37,8 @@ where
     K: PartialEq + Hash,
     V: Eq + Clone + Hash,
 {
-    /// Constructs a `MapWithDict` from an iterator of key-value pairs with a gamma for the MPHF function.
-    pub fn from_iter_with_gamma<I>(iter: I, gamma: f32) -> Result<Self, Error>
+    /// Constructs a `MapWithDict` from an iterator of key-value pairs and MPHF function params.
+    pub fn from_iter_with_params<I>(iter: I, gamma: f32) -> Result<Self, Error>
     where
         I: IntoIterator<Item = (K, V)>,
     {
@@ -165,7 +173,7 @@ where
 
     #[inline]
     fn try_from(value: HashMap<K, V>) -> Result<Self, Self::Error> {
-        MapWithDict::from_iter_with_gamma(value, 2.0)
+        MapWithDict::from_iter_with_params(value, 2.0)
     }
 }
 

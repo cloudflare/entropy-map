@@ -12,15 +12,22 @@
 //! query for a non-existent key at construction returns `false`, similar to `MapWithDict`.
 
 use std::collections::HashMap;
-use std::hash::Hash;
+use std::hash::{Hash, Hasher};
 
 use bitpacking::{BitPacker, BitPacker1x};
+use fxhash::FxHasher;
+use num::{PrimInt, Unsigned};
 
 use crate::map_with_dict::MapWithDict;
 use crate::mphf::Mphf;
 
 /// An efficient, immutable hash map with bit-packed `Vec<u32>` values for optimized space usage.
-pub struct MapWithDictBitpacked<K>(MapWithDict<K, u8>);
+pub struct MapWithDictBitpacked<K, const B: usize = 32, const S: usize = 8, ST = u8, H = FxHasher>(
+    MapWithDict<K, u8, B, S, ST, H>,
+)
+where
+    ST: PrimInt + Unsigned,
+    H: Hasher + Default;
 
 /// Errors that can occur when constructing `MapWithDictBitpacked`.
 #[derive(Debug)]
@@ -35,8 +42,8 @@ impl<K> MapWithDictBitpacked<K>
 where
     K: Hash + PartialEq,
 {
-    /// Constructs a `MapWithDictBitpacked` from an iterator of key-value pairs with a gamma for the MPHF function.
-    pub fn from_iter_with_gamma<I>(iter: I, gamma: f32) -> Result<Self, Error>
+    /// Constructs a `MapWithDictBitpacked` from an iterator of key-value pairs and MPHF function params.
+    pub fn from_iter_with_params<I>(iter: I, gamma: f32) -> Result<Self, Error>
     where
         I: IntoIterator<Item = (K, Vec<u32>)>,
     {
@@ -182,7 +189,7 @@ where
 
     #[inline]
     fn try_from(value: HashMap<K, Vec<u32>>) -> Result<Self, Self::Error> {
-        MapWithDictBitpacked::from_iter_with_gamma(value, 2.0)
+        MapWithDictBitpacked::from_iter_with_params(value, 2.0)
     }
 }
 

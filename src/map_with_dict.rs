@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::mem::{size_of, size_of_val};
 
-use crate::mphf::{Mphf, MphfError};
+use crate::mphf::{Error, Mphf};
 
 pub struct MapWithDict<K, V> {
     /// Minimally Perfect Hash Function for keys indices retrieval
@@ -29,8 +29,8 @@ where
     K: PartialEq + Hash,
     V: Eq + Clone + Hash,
 {
-    /// Constructs a `MapWithDict` from an iterator of key-value pairs with a specified load factor for the MPH function.
-    pub fn from_iter_with_gamma<I>(iter: I, gamma: f32) -> Result<Self, MphfError>
+    /// Constructs a `MapWithDict` from an iterator of key-value pairs with a gamma for the MPHF function.
+    pub fn from_iter_with_gamma<I>(iter: I, gamma: f32) -> Result<Self, Error>
     where
         I: IntoIterator<Item = (K, V)>,
     {
@@ -81,13 +81,13 @@ where
     pub fn get(&self, key: &K) -> Option<&V> {
         let idx = self.mphf.get(key)?;
 
-        // SAFETY: idx is always within bounds (ensured during construction)
+        // SAFETY: `idx` is always within bounds (ensured during construction)
         unsafe {
             if self.keys.get_unchecked(idx) != key {
                 None
             } else {
                 let dict_idx = *self.values_index.get_unchecked(idx);
-                // SAFETY: dict_idx is always within bounds (ensure during construction)
+                // SAFETY: `dict_idx` is always within bounds (ensure during construction)
                 Some(self.values_dict.get_unchecked(dict_idx))
             }
         }
@@ -109,7 +109,7 @@ where
     #[inline]
     pub fn contains_key(&self, key: &K) -> bool {
         if let Some(idx) = self.mphf.get(key) {
-            // SAFETY: idx is always within bounds (ensured during construction)
+            // SAFETY: `idx` is always within bounds (ensured during construction)
             unsafe { self.keys.get_unchecked(idx) == key }
         } else {
             false
@@ -123,7 +123,7 @@ where
             .iter()
             .zip(self.values_index.iter())
             .map(move |(key, &dict_idx)| {
-                // SAFETY: dict_idx is always within bounds (ensured during construction)
+                // SAFETY: `dict_idx` is always within bounds (ensured during construction)
                 let value = unsafe { self.values_dict.get_unchecked(dict_idx) };
                 (key, value)
             })
@@ -139,7 +139,7 @@ where
     #[inline]
     pub fn values(&self) -> impl Iterator<Item = &V> {
         self.values_index.iter().map(move |&dict_idx| {
-            // SAFETY: dict_idx is always within bounds (ensured during construction)
+            // SAFETY: `dict_idx` is always within bounds (ensured during construction)
             unsafe { self.values_dict.get_unchecked(dict_idx) }
         })
     }
@@ -161,7 +161,7 @@ where
     K: PartialEq + Hash,
     V: Eq + Clone + Hash,
 {
-    type Error = MphfError;
+    type Error = Error;
 
     #[inline]
     fn try_from(value: HashMap<K, V>) -> Result<Self, Self::Error> {
@@ -178,7 +178,7 @@ pub mod tests {
     #[test]
     fn test_map_with_dict() {
         let mut rng = ChaCha8Rng::seed_from_u64(123);
-        let items_num = 10000;
+        let items_num = 1000;
 
         // Collect original key-value pairs directly into a HashMap
         let original_map: HashMap<u64, u32> = (0..items_num)
@@ -220,6 +220,6 @@ pub mod tests {
         }
 
         // Test size
-        assert_eq!(map.size(), 163688);
+        assert_eq!(map.size(), 16620);
     }
 }

@@ -14,7 +14,7 @@ use std::mem::{size_of, size_of_val};
 use fxhash::FxHasher;
 use num::{Integer, PrimInt, Unsigned};
 
-use crate::mphf::MphfError::*;
+use crate::mphf::Error::*;
 use crate::rank::RankedBits;
 
 /// A Minimal Perfect Hash Function (MPHF).
@@ -40,7 +40,7 @@ const MAX_LEVELS: usize = 32;
 
 /// Errors that can occur when initializing `Mphf`.
 #[derive(Debug)]
-pub enum MphfError {
+pub enum Error {
     /// Error when the maximum number of levels is exceeded during initialization.
     MaxLevelsExceeded,
     /// Error when the parameter `B` is out of the [1..64] range.
@@ -55,7 +55,7 @@ pub enum MphfError {
 
 impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default> Mphf<B, S, ST, H> {
     /// Initializes `Mphf` using slice of `keys` and parameter `gamma`.
-    pub fn from_slice<K: Hash>(keys: &[K], gamma: f32) -> Result<Self, MphfError> {
+    pub fn from_slice<K: Hash>(keys: &[K], gamma: f32) -> Result<Self, Error> {
         if B < 1 || B > 64 {
             return Err(InvalidBParameter);
         }

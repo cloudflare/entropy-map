@@ -13,8 +13,10 @@ categories = ["algorithms", "data-structures"]
 
 [dependencies]
 bitpacking = "0.9.2"
+bytecheck = { version = "~0.6.8", default-features = false, optional = true }
 fxhash = "0.2.1"
 num = "0.4.1"
+rkyv = { version = "0.7.42", features = ["validation", "strict"], optional = true }
 
 [dev-dependencies]
 bitvec = "1.0.1"
@@ -22,3 +24,7 @@ paste = "1.0.14"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
 test-case = "3.3.1"
+
+[features]
+default = ["rkyv_derive"]
+rkyv_derive = ["rkyv", "bytecheck"]

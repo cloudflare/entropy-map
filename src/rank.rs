@@ -11,7 +11,9 @@ const L2_BIT_SIZE: usize = 512;
 const L1_BIT_SIZE: usize = 8 * L2_BIT_SIZE;
 
 #[derive(Debug)]
-pub(crate) struct RankedBits {
+#[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
+#[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
+pub struct RankedBits {
     /// The bit vector represented as an array of u64 integers.
     bits: Box<[u64]>,
     /// Precomputed rank information for L1 and L2 blocks.

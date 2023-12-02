@@ -22,6 +22,8 @@ use crate::map_with_dict::MapWithDict;
 use crate::mphf::Mphf;
 
 /// An efficient, immutable hash map with bit-packed `Vec<u32>` values for optimized space usage.
+#[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
+#[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
 pub struct MapWithDictBitpacked<K, const B: usize = 32, const S: usize = 8, ST = u8, H = FxHasher>(
     MapWithDict<K, u8, B, S, ST, H>,
 )

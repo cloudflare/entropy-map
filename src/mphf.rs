@@ -24,6 +24,8 @@ use crate::rank::RankedBits;
 /// - `S`: defines maximum seed value to try (2^S) in [0..16] range, default 8.
 /// - `ST`: seed type (unsigned integer), default `u8`.
 /// - `H`: hasher used to hash keys, default `FxHasher`.
+#[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
+#[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
 pub struct Mphf<const B: usize = 32, const S: usize = 8, ST: PrimInt + Unsigned = u8, H: Hasher + Default = FxHasher> {
     /// Ranked bits for efficient rank queries
     ranked_bits: RankedBits,

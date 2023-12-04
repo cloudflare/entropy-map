@@ -11,6 +11,9 @@ const L2_BIT_SIZE: usize = 512;
 const L1_BIT_SIZE: usize = 8 * L2_BIT_SIZE;
 
 /// Trait for efficient bit-level operations on ranked bit sequences.
+///
+/// This trait is designed to provide consistent methods for accessing ranked bit sequences in both
+/// their standard and `Archived` formats (utilizing the `rkyv` library).
 pub trait RankedBitsAccess {
     /// Returns the number of set bits up to `idx`, or `None` if the bit at `idx` is not set.
     ///

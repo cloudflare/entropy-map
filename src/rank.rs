@@ -3,12 +3,65 @@
 //! crate's focus on low-latency hash maps. For detailed methodology, refer to the related paper:
 //! [Engineering Compact Data Structures for Rank and Select Queries on Bit Vectors](https://arxiv.org/pdf/2206.01149.pdf).
 
-use std::mem::{size_of, size_of_val};
+use std::mem::size_of_val;
 
 /// Size of the L2 block in bits.
 const L2_BIT_SIZE: usize = 512;
 /// Size of the L1 block in bits, calculated as a multiple of the L2 block size.
 const L1_BIT_SIZE: usize = 8 * L2_BIT_SIZE;
+
+/// Trait for efficient bit-level operations on ranked bit sequences.
+pub trait RankedBitsAccess {
+    /// Returns the number of set bits up to `idx`, or `None` if the bit at `idx` is not set.
+    ///
+    /// # Safety
+    /// This method is unsafe because `idx` must be within the bounds of the bits stored in `RankedBitsAccess`.
+    /// An index out of bounds can lead to undefined behavior.
+    unsafe fn rank(&self, idx: usize) -> Option<usize> {
+        let word_idx = idx / 64;
+        let bit_idx = idx % 64;
+        let bits = self.bits();
+        let word = *bits.get_unchecked(word_idx);
+
+        if (word & (1u64 << bit_idx)) == 0 {
+            return None;
+        }
+
+        let l1_pos = idx / L1_BIT_SIZE;
+        let l2_pos = (idx % L1_BIT_SIZE) / L2_BIT_SIZE;
+
+        let l12_ranks = self.l12_ranks();
+        let l12_rank = l12_ranks.get_unchecked(l1_pos);
+        let l1_rank = (l12_rank & 0xFFFFFFFFFFF) as usize;
+        let l2_rank = ((l12_rank >> (32 + 12 * l2_pos)) & 0xFFF) as usize;
+
+        let idx_within_l2 = idx % L2_BIT_SIZE;
+        let blocks_num = idx_within_l2 / 64;
+        let offset = (idx / L2_BIT_SIZE) * 8;
+        let block = bits.get_unchecked(offset..offset + blocks_num);
+
+        let block_rank = block.iter().map(|&x| x.count_ones() as usize).sum::<usize>();
+
+        let word = *bits.get_unchecked(offset + blocks_num);
+        let word_mask = ((1u64 << (idx_within_l2 % 64)) - 1) * (idx_within_l2 > 0) as u64;
+        let word_rank = (word & word_mask).count_ones() as usize;
+
+        let total_rank = l1_rank + l2_rank + block_rank + word_rank;
+
+        Some(total_rank)
+    }
+
+    /// Returns the total number of bytes occupied by `RankedBitsAccess`
+    fn size(&self) -> usize {
+        size_of_val(self.bits()) + size_of_val(self.l12_ranks())
+    }
+
+    /// Returns `bits` stored in slice of `u64`
+    fn bits(&self) -> &[u64];
+
+    /// Returns `l12_ranks` stored in slice of `u128`
+    fn l12_ranks(&self) -> &[u128];
+}
 
 #[derive(Debug)]
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
@@ -53,46 +106,31 @@ impl RankedBits {
 
         RankedBits { bits, l12_ranks: l12_ranks.into_boxed_slice() }
     }
+}
 
-    /// Returns the number of set bits up to the given index.
+impl RankedBitsAccess for RankedBits {
     #[inline]
-    pub(crate) fn rank(&self, idx: usize) -> usize {
-        let l1_pos = idx / L1_BIT_SIZE;
-        let l2_pos = (idx % L1_BIT_SIZE) / L2_BIT_SIZE;
-
-        let l12_rank = unsafe { self.l12_ranks.get_unchecked(l1_pos) };
-        let l1_rank = (l12_rank & 0xFFFFFFFFFFF) as usize;
-        let l2_rank = ((l12_rank >> (32 + 12 * l2_pos)) & 0xFFF) as usize;
-
-        let idx_within_l2 = idx % L2_BIT_SIZE;
-        let blocks_num = idx_within_l2 / 64;
-        let offset = (idx / L2_BIT_SIZE) * 8;
-        let block = unsafe { self.bits.get_unchecked(offset..offset + blocks_num) };
-
-        let block_rank = block.iter().map(|&x| x.count_ones() as usize).sum::<usize>();
-
-        let word = unsafe { *self.bits.get_unchecked(offset + blocks_num) };
-        let word_mask = ((1u64 << (idx_within_l2 % 64)) - 1) * (idx_within_l2 > 0) as u64;
-        let word_rank = (word & word_mask).count_ones() as usize;
-
-        l1_rank + l2_rank + block_rank + word_rank
+    fn bits(&self) -> &[u64] {
+        &self.bits
     }
 
-    /// Retrieves the boolean value of the bit at the specified index.
     #[inline]
-    pub(crate) fn get(&self, idx: usize) -> bool {
-        let word_idx = idx / 64;
-        let bit_idx = idx % 64;
-        let word = unsafe { *self.bits.get_unchecked(word_idx) };
-        (word & (1u64 << bit_idx)) != 0
+    fn l12_ranks(&self) -> &[u128] {
+        &self.l12_ranks
+    }
+}
+
+/// Implement `RankedBitsAccess` for `Archived` version of `RankedBits` if feature is enabled
+#[cfg(feature = "rkyv_derive")]
+impl RankedBitsAccess for ArchivedRankedBits {
+    #[inline]
+    fn bits(&self) -> &[u64] {
+        &self.bits
     }
 
-    /// Returns the total number of bytes occupied by `RankedBits`
-    pub(crate) fn size(&self) -> usize {
-        size_of_val(&self.bits)
-            + size_of_val(&self.l12_ranks)
-            + size_of::<u64>() * self.bits.len()
-            + size_of::<u128>() * self.l12_ranks.len()
+    #[inline]
+    fn l12_ranks(&self) -> &[u128] {
+        &self.l12_ranks
     }
 }
 
@@ -114,12 +152,8 @@ mod tests {
 
         let ranked_bits = RankedBits::new(bits.into_boxed_slice());
 
-        assert_eq!(ranked_bits.get(0), false); // 1st bit
-        assert_eq!(ranked_bits.get(1), true); // 2nd bit
-        assert_eq!(ranked_bits.get(2), false); // 3rd bit
-
-        assert_eq!(ranked_bits.rank(0), 0); // No set bits before the first
-        assert_eq!(ranked_bits.rank(8), 4); // 3 set bits in the first byte
+        assert_eq!(unsafe { ranked_bits.rank(0) }, None); // No set bits before the first
+        assert_eq!(unsafe { ranked_bits.rank(7) }, Some(3)); // 3 set bits in the first byte
     }
 
     #[test]
@@ -130,13 +164,14 @@ mod tests {
         let bv = BitVec::<u64, Lsb0>::from_slice(&bits);
 
         for idx in 0..bv.len() {
-            assert_eq!(ranked_bits.get(idx), bv[idx], "Mismatch at index {}", idx);
-            assert_eq!(
-                ranked_bits.rank(idx),
-                bv[..idx].count_ones(),
-                "Rank mismatch at index {}",
-                idx
-            );
+            if bv[idx] {
+                assert_eq!(
+                    unsafe { ranked_bits.rank(idx).unwrap() },
+                    bv[..idx].count_ones(),
+                    "Rank mismatch at index {}",
+                    idx
+                );
+            }
         }
     }
 }

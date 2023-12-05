@@ -13,23 +13,31 @@
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::mem::size_of_val;
 
 use bitpacking::{BitPacker, BitPacker1x};
 use fxhash::FxHasher;
 use num::{PrimInt, Unsigned};
 
-use crate::map_with_dict::MapWithDict;
 use crate::mphf::Mphf;
 
 /// An efficient, immutable hash map with bit-packed `Vec<u32>` values for optimized space usage.
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
 #[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
-pub struct MapWithDictBitpacked<K, const B: usize = 32, const S: usize = 8, ST = u8, H = FxHasher>(
-    MapWithDict<K, u8, B, S, ST, H>,
-)
+pub struct MapWithDictBitpacked<K, const B: usize = 32, const S: usize = 8, ST = u8, H = FxHasher>
 where
     ST: PrimInt + Unsigned,
-    H: Hasher + Default;
+    H: Hasher + Default,
+{
+    /// Minimally Perfect Hash Function for keys indices retrieval
+    mphf: Mphf<B, S, ST, H>,
+    /// Map keys
+    keys: Box<[K]>,
+    /// Points to the value index in the dictionary
+    values_index: Box<[usize]>,
+    /// Bit-packed dictionary containing values
+    values_dict: Box<[u8]>,
+}
 
 /// Errors that can occur when constructing `MapWithDictBitpacked`.
 #[derive(Debug)]
@@ -95,31 +103,31 @@ where
             }
         }
 
-        Ok(MapWithDictBitpacked(MapWithDict {
+        Ok(MapWithDictBitpacked {
             mphf,
             keys: keys.into_boxed_slice(),
             values_index: values_index.into_boxed_slice(),
             values_dict: values_dict.into_boxed_slice(),
-        }))
+        })
     }
 
     /// Retrieves `u32` values for a given key using mphf, returning `false` if key is not present.
     #[inline]
     pub fn get_values(&self, key: &K, values: &mut [u32]) -> bool {
-        let idx = match self.0.mphf.get(key) {
+        let idx = match self.mphf.get(key) {
             Some(idx) => idx,
             None => return false,
         };
 
         // SAFETY: `idx` is always within bounds (ensured during construction)
         unsafe {
-            if self.0.keys.get_unchecked(idx) != key {
+            if self.keys.get_unchecked(idx) != key {
                 return false;
             }
 
-            // SAFETY: `dict_idx` is always within bounds (ensure during construction)
-            let dict_idx = *self.0.values_index.get_unchecked(idx);
-            let dict = self.0.values_dict.get_unchecked(dict_idx..);
+            // SAFETY: `idx` and `value_idx` are always within bounds (ensure during construction)
+            let value_idx = *self.values_index.get_unchecked(idx);
+            let dict = self.values_dict.get_unchecked(value_idx..);
             unpack_values(dict, values);
         }
 
@@ -129,48 +137,51 @@ where
     /// Returns the number of key-value pairs in the map.
     #[inline]
     pub fn len(&self) -> usize {
-        self.0.keys.len()
+        self.keys.len()
     }
 
     /// Returns `true` if the map contains no elements.
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.0.keys.is_empty()
+        self.keys.is_empty()
     }
 
     /// Checks if the map contains the specified key.
     #[inline]
     pub fn contains_key(&self, key: &K) -> bool {
-        self.0.contains_key(key)
+        if let Some(idx) = self.mphf.get(key) {
+            // SAFETY: `idx` is always within bounds (ensured during construction)
+            unsafe { self.keys.get_unchecked(idx) == key }
+        } else {
+            false
+        }
     }
 
     /// Returns an iterator over the map, yielding key-value pairs.
     #[inline]
     pub fn iter(&self, n: usize) -> impl Iterator<Item = (&K, Vec<u32>)> {
-        self.keys()
-            .zip(self.0.values_index.iter())
-            .map(move |(key, &dict_idx)| {
-                let mut values = vec![0; n];
-                // SAFETY: `dict_idx` is always within bounds (ensured during construction)
-                let dict = unsafe { self.0.values_dict.get_unchecked(dict_idx..) };
-                unpack_values(dict, &mut values);
-                (key, values)
-            })
+        self.keys().zip(self.values_index.iter()).map(move |(key, &value_idx)| {
+            let mut values = vec![0; n];
+            // SAFETY: `value_idx` is always within bounds (ensured during construction)
+            let dict = unsafe { self.values_dict.get_unchecked(value_idx..) };
+            unpack_values(dict, &mut values);
+            (key, values)
+        })
     }
 
     /// Returns an iterator over the keys of the map.
     #[inline]
     pub fn keys(&self) -> impl Iterator<Item = &K> {
-        self.0.keys()
+        self.keys.iter()
     }
 
     /// Returns an iterator over the values of the map.
     #[inline]
     pub fn values(&self, n: usize) -> impl Iterator<Item = Vec<u32>> + '_ {
-        self.0.values_index.iter().map(move |&dict_idx| {
+        self.values_index.iter().map(move |&value_idx| {
             let mut values = vec![0; n];
-            // SAFETY: `dict_idx` is always within bounds (ensured during construction)
-            let dict = unsafe { self.0.values_dict.get_unchecked(dict_idx..) };
+            // SAFETY: `value_idx` is always within bounds (ensured during construction)
+            let dict = unsafe { self.values_dict.get_unchecked(value_idx..) };
             unpack_values(dict, &mut values);
             values
         })
@@ -178,7 +189,11 @@ where
 
     /// Returns the total number of bytes occupied by `MapWithDictBitpacked`
     pub fn size(&self) -> usize {
-        self.0.size()
+        size_of_val(self)
+            + self.mphf.size()
+            + size_of_val(self.keys.as_ref())
+            + size_of_val(self.values_index.as_ref())
+            + size_of_val(self.values_dict.as_ref())
     }
 }
 
@@ -244,61 +259,44 @@ fn unpack_values(dict: &[u8], res: &mut [u32]) {
     }
 }
 
+/// Implement `get` for `Archived` version of `MapWithDictBitpacked` if feature is enabled
+#[cfg(feature = "rkyv_derive")]
+impl<K> ArchivedMapWithDictBitpacked<K>
+where
+    K: PartialEq + Hash + rkyv::Archive,
+    K::Archived: PartialEq<K>,
+{
+    /// Retrieves `u32` values from `Archived` version of `MapWithDictBitpacked` for a given key
+    /// using `Archived` mphf, returning `false` if key is not present.
+    #[inline]
+    pub fn get_values(&self, key: &K, values: &mut [u32]) -> bool {
+        let idx = match self.mphf.get(key) {
+            Some(idx) => idx,
+            None => return false,
+        };
+
+        // SAFETY: `idx` is always within bounds (ensured during construction)
+        unsafe {
+            if self.keys.get_unchecked(idx) != key {
+                return false;
+            }
+
+            // SAFETY: `idx` and `value_idx` are always within bounds (ensure during construction)
+            let value_idx = *self.values_index.get_unchecked(idx) as usize;
+            let dict = self.values_dict.get_unchecked(value_idx..);
+            unpack_values(dict, values);
+        }
+
+        true
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
     use test_case::test_case;
-
-    #[test]
-    fn test_map_with_dict_bitpacked() {
-        let mut rng = ChaCha8Rng::seed_from_u64(123);
-        let values_num = 10;
-        let items_num = 1000;
-
-        let original_map: HashMap<u64, Vec<u32>> = (0..items_num)
-            .map(|_| {
-                let key = rng.gen::<u64>();
-                let value = (0..values_num).map(|_| rng.gen_range(1..=10)).collect();
-                (key, value)
-            })
-            .collect();
-
-        let map = MapWithDictBitpacked::try_from(original_map.clone()).unwrap();
-
-        // Test len
-        assert_eq!(map.len(), original_map.len());
-
-        // Test is_empty
-        assert_eq!(map.is_empty(), original_map.is_empty());
-
-        // Test get_values, contains_key
-        let mut values_buf = vec![0; values_num];
-        for (key, value) in &original_map {
-            assert_eq!(map.get_values(key, &mut values_buf), true);
-            assert_eq!(value, &values_buf);
-            assert!(map.contains_key(key));
-        }
-
-        // Test iter
-        for (&k, v) in map.iter(values_num) {
-            assert_eq!(original_map.get(&k), Some(&v));
-        }
-
-        // Test keys
-        for k in map.keys() {
-            assert!(original_map.contains_key(k));
-        }
-
-        // Test values
-        for v in map.values(values_num) {
-            assert!(original_map.values().any(|val| val == &v));
-        }
-
-        // Test size
-        assert_eq!(map.size(), 22672);
-    }
 
     #[test_case(
         &[] => Vec::<u8>::new();
@@ -374,6 +372,80 @@ pub mod tests {
 
                 assert_eq!(values, unpacked_values);
             }
+        }
+    }
+
+    fn gen_map(items_num: usize, values_num: usize) -> HashMap<u64, Vec<u32>> {
+        let mut rng = ChaCha8Rng::seed_from_u64(123);
+
+        (0..items_num)
+            .map(|_| {
+                let key = rng.gen::<u64>();
+                let value = (0..values_num).map(|_| rng.gen_range(1..=10)).collect();
+                (key, value)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_map_with_dict_bitpacked() {
+        let items_num = 1000;
+        let values_num = 10;
+        let original_map = gen_map(items_num, values_num);
+
+        let map = MapWithDictBitpacked::try_from(original_map.clone()).unwrap();
+
+        // Test len
+        assert_eq!(map.len(), original_map.len());
+
+        // Test is_empty
+        assert_eq!(map.is_empty(), original_map.is_empty());
+
+        // Test get_values, contains_key
+        let mut values_buf = vec![0; values_num];
+        for (key, value) in &original_map {
+            assert_eq!(map.get_values(key, &mut values_buf), true);
+            assert_eq!(value, &values_buf);
+            assert!(map.contains_key(key));
+        }
+
+        // Test iter
+        for (&k, v) in map.iter(values_num) {
+            assert_eq!(original_map.get(&k), Some(&v));
+        }
+
+        // Test keys
+        for k in map.keys() {
+            assert!(original_map.contains_key(k));
+        }
+
+        // Test values
+        for v in map.values(values_num) {
+            assert!(original_map.values().any(|val| val == &v));
+        }
+
+        // Test size
+        assert_eq!(map.size(), 22664);
+    }
+
+    #[test]
+    fn test_rkyv() {
+        // create regular `HashMap`, then `MapWithDictBitpacked`, then serialize to `rkyv` bytes.
+        let items_num = 1000;
+        let values_num = 10;
+        let original_map = gen_map(items_num, values_num);
+        let map = MapWithDictBitpacked::try_from(original_map.clone()).unwrap();
+        let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&map).unwrap();
+
+        assert_eq!(rkyv_bytes.len(), 18516);
+
+        let rkyv_map = rkyv::check_archived_root::<MapWithDictBitpacked<u64>>(&rkyv_bytes).unwrap();
+
+        // Test get_values on `Archived` version of `MapWithDictBitpacked`
+        let mut values_buf = vec![0; values_num];
+        for (k, v) in original_map {
+            rkyv_map.get_values(&k, &mut values_buf);
+            assert_eq!(v, values_buf);
         }
     }
 }

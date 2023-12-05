@@ -9,49 +9,13 @@
 
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
-use std::mem::{size_of, size_of_val};
+use std::mem::size_of_val;
 
 use fxhash::FxHasher;
 use num::{Integer, PrimInt, Unsigned};
 
 use crate::mphf::Error::*;
 use crate::rank::{RankedBits, RankedBitsAccess};
-
-/// Trait for querying Minimal Perfect Hash Function (MPHF) structures.
-///
-/// This trait is designed to provide a uniform interface for querying both the
-/// standard MPHF and its `Archived` version (using the `rkyv` library). It abstracts
-/// the functionality necessary to retrieve indices associated with keys, ensuring
-/// compatibility with different forms of MPHF storage.
-pub trait MphfAccess<const B: usize, H: Hasher + Default> {
-    /// Returns the index associated with `key`, within 0 to the key collection size (exclusive).
-    /// If `key` was not in the initial collection, returns `None` or an arbitrary value from the range.
-    #[inline]
-    fn get<K: Hash>(&self, key: &K) -> Option<usize> {
-        let mut groups_before = 0;
-        for (level, &groups) in self.level_groups().iter().enumerate() {
-            let level_hash = hash_with_seed(hash_key::<H, _>(key), level as u32);
-            let group_idx = groups_before + fastmod32(level_hash as u32, groups as u32);
-            let group_seed = self.group_seed(group_idx);
-            let bit_idx = bit_index_for_seed::<B>(level_hash, group_seed, group_idx);
-            if let Some(rank) = self.rank(bit_idx) {
-                return Some(rank);
-            }
-            groups_before += groups as usize;
-        }
-
-        return None;
-    }
-
-    /// Returns group sizes at each level
-    fn level_groups(&self) -> &[u32];
-
-    /// Returns group seed at given `group_idx`
-    fn group_seed(&self, group_idx: usize) -> u32;
-
-    /// Returns the number of set bits up to `idx`, or `None` if the bit at `idx` is not set.
-    fn rank(&self, idx: usize) -> Option<usize>;
-}
 
 /// A Minimal Perfect Hash Function (MPHF).
 ///
@@ -261,54 +225,44 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
         }
     }
 
+    /// Returns the index associated with `key`, within 0 to the key collection size (exclusive).
+    /// If `key` was not in the initial collection, returns `None` or an arbitrary value from the range.
+    #[inline]
+    pub fn get<K: Hash>(&self, key: &K) -> Option<usize> {
+        Self::get_impl(key, &self.level_groups, &self.group_seeds, &self.ranked_bits)
+    }
+
+    /// Inner implementation of `get` with `level_groups`, `group_seeds` and `ranked_bits` passed
+    /// from standard and `Archived` version of `Mphf`.
+    #[inline]
+    fn get_impl<K: Hash>(
+        key: &K,
+        level_groups: &[u32],
+        group_seeds: &[ST],
+        ranked_bits: &impl RankedBitsAccess,
+    ) -> Option<usize> {
+        let mut groups_before = 0;
+        for (level, &groups) in level_groups.iter().enumerate() {
+            let level_hash = hash_with_seed(hash_key::<H, _>(key), level as u32);
+            let group_idx = groups_before + fastmod32(level_hash as u32, groups);
+            // SAFETY: `group_idx` is always within bounds (ensured during calculation)
+            let group_seed = unsafe { group_seeds.get_unchecked(group_idx).to_u32().unwrap() };
+            let bit_idx = bit_index_for_seed::<B>(level_hash, group_seed, group_idx);
+            if let Some(rank) = ranked_bits.rank(bit_idx) {
+                return Some(rank);
+            }
+            groups_before += groups as usize;
+        }
+
+        return None;
+    }
+
     /// Returns the total number of bytes occupied by `Mphf`
     pub fn size(&self) -> usize {
         size_of_val(self)
+            + size_of_val(self.level_groups.as_ref())
+            + size_of_val(self.group_seeds.as_ref())
             + self.ranked_bits.size()
-            + self.level_groups.len() * size_of::<u32>()
-            + self.group_seeds.len() * size_of::<ST>()
-    }
-}
-
-impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default> MphfAccess<B, H>
-    for Mphf<B, S, ST, H>
-{
-    #[inline]
-    fn level_groups(&self) -> &[u32] {
-        &self.level_groups
-    }
-
-    #[inline]
-    fn group_seed(&self, group_idx: usize) -> u32 {
-        // SAFETY: `group_idx` is always within bounds (ensured during calculation)
-        unsafe { self.group_seeds.get_unchecked(group_idx).to_u32().unwrap() }
-    }
-
-    #[inline]
-    fn rank(&self, idx: usize) -> Option<usize> {
-        // SAFETY: `idx` is always within bounds (ensured during calculation)
-        unsafe { self.ranked_bits.rank(idx) }
-    }
-}
-
-/// Implement `MphfAccess` for `Archived` version of `Mphf` if feature is enabled
-#[cfg(feature = "rkyv_derive")]
-impl<const B: usize, H: Hasher + Default> MphfAccess<B, H> for ArchivedMphf {
-    #[inline]
-    fn level_groups(&self) -> &[u32] {
-        &self.level_groups
-    }
-
-    #[inline]
-    fn group_seed(&self, group_idx: usize) -> u32 {
-        // SAFETY: `group_idx` is always within bounds (ensured during calculation)
-        unsafe { *self.group_seeds.get_unchecked(group_idx) as u32 }
-    }
-
-    #[inline]
-    fn rank(&self, idx: usize) -> Option<usize> {
-        // SAFETY: `idx` is always within bounds (ensured during calculation)
-        unsafe { self.ranked_bits.rank(idx) }
     }
 }
 
@@ -348,6 +302,19 @@ fn fastmod32(x: u32, n: u32) -> usize {
     (((x as u64) * (n as u64)) >> 32) as usize
 }
 
+/// Implement `get` for `Archived` version of `Mphf` if feature is enabled
+#[cfg(feature = "rkyv_derive")]
+impl<const B: usize, const S: usize, ST, H> ArchivedMphf<B, S, ST, H>
+where
+    ST: PrimInt + Unsigned + rkyv::Archive<Archived = ST>,
+    H: Hasher + Default,
+{
+    #[inline]
+    pub fn get<K: Hash>(&self, key: &K) -> Option<usize> {
+        Mphf::<B, S, ST, H>::get_impl(key, &self.level_groups, &self.group_seeds, &self.ranked_bits)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -373,8 +340,8 @@ mod tests {
 
         // Compute average number of levels which needed to be accessed during `get`
         let mut avg_levels = 0f32;
-        let total_groups: u32 = mphf.level_groups().iter().sum();
-        for (i, &groups) in mphf.level_groups().iter().enumerate() {
+        let total_groups: u32 = mphf.level_groups.iter().sum();
+        for (i, &groups) in mphf.level_groups.iter().enumerate() {
             avg_levels += ((i + 1) as f32 * groups as f32) / (total_groups as f32);
         }
         let bits = mphf.size() as f32 * (8.0 / n as f32);
@@ -382,7 +349,7 @@ mod tests {
         format!(
             "bits: {:.2} total_levels: {} avg_levels: {:.2}",
             bits,
-            mphf.level_groups().len(),
+            mphf.level_groups.len(),
             avg_levels
         )
     }
@@ -404,30 +371,30 @@ mod tests {
 
     // Generate test functions for different combinations of B and S
     generate_tests!(
-        (1, 8, 10000, 100, "bits: 24.56 total_levels: 16 avg_levels: 2.81"),
-        (2, 8, 10000, 100, "bits: 8.88 total_levels: 9 avg_levels: 1.78"),
-        (4, 8, 10000, 100, "bits: 4.27 total_levels: 6 avg_levels: 1.40"),
-        (7, 8, 10000, 100, "bits: 3.00 total_levels: 4 avg_levels: 1.33"),
-        (8, 8, 10000, 100, "bits: 2.69 total_levels: 4 avg_levels: 1.28"),
-        (15, 8, 10000, 100, "bits: 2.47 total_levels: 4 avg_levels: 1.50"),
-        (16, 8, 10000, 100, "bits: 2.25 total_levels: 6 avg_levels: 1.42"),
-        (23, 8, 10000, 100, "bits: 2.29 total_levels: 3 avg_levels: 1.45"),
-        (24, 8, 10000, 100, "bits: 2.22 total_levels: 6 avg_levels: 1.59"),
-        (31, 8, 10000, 100, "bits: 2.37 total_levels: 3 avg_levels: 1.44"),
-        (32, 8, 10000, 100, "bits: 2.16 total_levels: 7 avg_levels: 1.62"),
-        (33, 8, 10000, 100, "bits: 2.49 total_levels: 4 avg_levels: 1.78"),
-        (48, 8, 10000, 100, "bits: 2.22 total_levels: 7 avg_levels: 1.78"),
-        (53, 8, 10000, 100, "bits: 2.47 total_levels: 3 avg_levels: 1.67"),
-        (61, 8, 10000, 100, "bits: 2.79 total_levels: 4 avg_levels: 2.00"),
-        (63, 8, 10000, 100, "bits: 2.87 total_levels: 4 avg_levels: 2.00"),
-        (64, 8, 10000, 100, "bits: 2.22 total_levels: 8 avg_levels: 1.84"),
-        (32, 7, 10000, 100, "bits: 2.25 total_levels: 7 avg_levels: 1.68"),
-        (32, 5, 10000, 100, "bits: 2.42 total_levels: 8 avg_levels: 1.81"),
-        (32, 4, 10000, 100, "bits: 2.54 total_levels: 9 avg_levels: 1.92"),
-        (32, 3, 10000, 100, "bits: 2.69 total_levels: 10 avg_levels: 2.04"),
-        (32, 1, 10000, 100, "bits: 3.16 total_levels: 12 avg_levels: 2.39"),
-        (32, 0, 10000, 100, "bits: 3.61 total_levels: 14 avg_levels: 2.72"),
+        (1, 8, 10000, 100, "bits: 24.58 total_levels: 16 avg_levels: 2.81"),
+        (2, 8, 10000, 100, "bits: 8.91 total_levels: 9 avg_levels: 1.78"),
+        (4, 8, 10000, 100, "bits: 4.29 total_levels: 6 avg_levels: 1.40"),
+        (7, 8, 10000, 100, "bits: 3.02 total_levels: 4 avg_levels: 1.33"),
+        (8, 8, 10000, 100, "bits: 2.71 total_levels: 4 avg_levels: 1.28"),
+        (15, 8, 10000, 100, "bits: 2.50 total_levels: 4 avg_levels: 1.50"),
+        (16, 8, 10000, 100, "bits: 2.28 total_levels: 6 avg_levels: 1.42"),
+        (23, 8, 10000, 100, "bits: 2.32 total_levels: 3 avg_levels: 1.45"),
+        (24, 8, 10000, 100, "bits: 2.25 total_levels: 6 avg_levels: 1.59"),
+        (31, 8, 10000, 100, "bits: 2.40 total_levels: 3 avg_levels: 1.44"),
+        (32, 8, 10000, 100, "bits: 2.19 total_levels: 7 avg_levels: 1.62"),
+        (33, 8, 10000, 100, "bits: 2.52 total_levels: 4 avg_levels: 1.78"),
+        (48, 8, 10000, 100, "bits: 2.25 total_levels: 7 avg_levels: 1.78"),
+        (53, 8, 10000, 100, "bits: 2.49 total_levels: 3 avg_levels: 1.67"),
+        (61, 8, 10000, 100, "bits: 2.82 total_levels: 4 avg_levels: 2.00"),
+        (63, 8, 10000, 100, "bits: 2.89 total_levels: 4 avg_levels: 2.00"),
+        (64, 8, 10000, 100, "bits: 2.25 total_levels: 8 avg_levels: 1.84"),
+        (32, 7, 10000, 100, "bits: 2.28 total_levels: 7 avg_levels: 1.68"),
+        (32, 5, 10000, 100, "bits: 2.45 total_levels: 8 avg_levels: 1.81"),
+        (32, 4, 10000, 100, "bits: 2.56 total_levels: 9 avg_levels: 1.92"),
+        (32, 3, 10000, 100, "bits: 2.72 total_levels: 10 avg_levels: 2.04"),
+        (32, 1, 10000, 100, "bits: 3.18 total_levels: 12 avg_levels: 2.39"),
+        (32, 0, 10000, 100, "bits: 3.64 total_levels: 14 avg_levels: 2.72"),
         (32, 8, 100000, 100, "bits: 2.10 total_levels: 9 avg_levels: 1.63"),
-        (32, 8, 100000, 200, "bits: 2.70 total_levels: 4 avg_levels: 1.05"),
+        (32, 8, 100000, 200, "bits: 2.71 total_levels: 4 avg_levels: 1.05"),
     );
 }

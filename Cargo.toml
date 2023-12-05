@@ -20,6 +20,7 @@ rkyv = { version = "0.7.42", features = ["validation", "strict"], optional = tru
 
 [dev-dependencies]
 bitvec = "1.0.1"
+criterion = { version = "0.5.1", features = ["html_reports"] }
 paste = "1.0.14"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
@@ -28,3 +29,24 @@ test-case = "3.3.1"
 [features]
 default = ["rkyv_derive"]
 rkyv_derive = ["rkyv", "bytecheck"]
+
+[[bench]]
+name = "rank_benchmark"
+harness = false
+
+[[bench]]
+name = "mphf_benchmark"
+harness = false
+
+[[bench]]
+name = "map_with_dict_benchmark"
+harness = false
+
+[profile.bench]
+debug = true
+
+[profile.release]
+codegen-units = 1
+debug = true
+lto = "fat"
+opt-level = 3

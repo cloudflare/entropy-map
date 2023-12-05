@@ -69,7 +69,7 @@ pub struct RankedBits {
 
 impl RankedBits {
     /// Initializes `RankedBits` with a provided bit vector.
-    pub(crate) fn new(bits: Box<[u64]>) -> Self {
+    pub fn new(bits: Box<[u64]>) -> Self {
         let blocks = bits.chunks_exact(64);
         let remainder = blocks.remainder();
         let mut l12_ranks = Vec::with_capacity(bits.len().div_ceil(64));

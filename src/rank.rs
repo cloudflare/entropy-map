@@ -16,14 +16,17 @@ const L1_BIT_SIZE: usize = 8 * L2_BIT_SIZE;
 /// their standard and `Archived` formats (utilizing the `rkyv` library).
 pub trait RankedBitsAccess {
     /// Returns the number of set bits up to `idx`, or `None` if the bit at `idx` is not set.
+    fn rank(&self, idx: usize) -> Option<usize>;
+
+    /// Inner implementation of `rank` with `bits` and `l12_ranks` passed from different implementations.
     ///
     /// # Safety
     /// This method is unsafe because `idx` must be within the bounds of the bits stored in `RankedBitsAccess`.
     /// An index out of bounds can lead to undefined behavior.
-    unsafe fn rank(&self, idx: usize) -> Option<usize> {
+    #[inline]
+    unsafe fn rank_impl(bits: &[u64], l12_ranks: &[u128], idx: usize) -> Option<usize> {
         let word_idx = idx / 64;
         let bit_idx = idx % 64;
-        let bits = self.bits();
         let word = *bits.get_unchecked(word_idx);
 
         if (word & (1u64 << bit_idx)) == 0 {
@@ -33,7 +36,6 @@ pub trait RankedBitsAccess {
         let l1_pos = idx / L1_BIT_SIZE;
         let l2_pos = (idx % L1_BIT_SIZE) / L2_BIT_SIZE;
 
-        let l12_ranks = self.l12_ranks();
         let l12_rank = l12_ranks.get_unchecked(l1_pos);
         let l1_rank = (l12_rank & 0xFFFFFFFFFFF) as usize;
         let l2_rank = ((l12_rank >> (32 + 12 * l2_pos)) & 0xFFF) as usize;
@@ -53,17 +55,6 @@ pub trait RankedBitsAccess {
 
         Some(total_rank)
     }
-
-    /// Returns the total number of bytes occupied by `RankedBitsAccess`
-    fn size(&self) -> usize {
-        size_of_val(self.bits()) + size_of_val(self.l12_ranks())
-    }
-
-    /// Returns `bits` stored in slice of `u64`
-    fn bits(&self) -> &[u64];
-
-    /// Returns `l12_ranks` stored in slice of `u128`
-    fn l12_ranks(&self) -> &[u128];
 }
 
 #[derive(Debug)]
@@ -109,31 +100,28 @@ impl RankedBits {
 
         RankedBits { bits, l12_ranks: l12_ranks.into_boxed_slice() }
     }
+
+    /// Returns the total number of bytes occupied by `RankedBits`
+    pub(crate) fn size(&self) -> usize {
+        size_of_val(self) + size_of_val(self.bits.as_ref()) + size_of_val(self.l12_ranks.as_ref())
+    }
 }
 
+/// Implement `rank` for `Archived` version of `RankedBits` if feature is enabled
+#[cfg(feature = "rkyv_derive")]
 impl RankedBitsAccess for RankedBits {
     #[inline]
-    fn bits(&self) -> &[u64] {
-        &self.bits
-    }
-
-    #[inline]
-    fn l12_ranks(&self) -> &[u128] {
-        &self.l12_ranks
+    fn rank(&self, idx: usize) -> Option<usize> {
+        unsafe { Self::rank_impl(&self.bits, &self.l12_ranks, idx) }
     }
 }
 
-/// Implement `RankedBitsAccess` for `Archived` version of `RankedBits` if feature is enabled
+/// Implement `rank` for `Archived` version of `RankedBits` if feature is enabled
 #[cfg(feature = "rkyv_derive")]
 impl RankedBitsAccess for ArchivedRankedBits {
     #[inline]
-    fn bits(&self) -> &[u64] {
-        &self.bits
-    }
-
-    #[inline]
-    fn l12_ranks(&self) -> &[u128] {
-        &self.l12_ranks
+    fn rank(&self, idx: usize) -> Option<usize> {
+        unsafe { Self::rank_impl(&self.bits, &self.l12_ranks, idx) }
     }
 }
 
@@ -155,8 +143,8 @@ mod tests {
 
         let ranked_bits = RankedBits::new(bits.into_boxed_slice());
 
-        assert_eq!(unsafe { ranked_bits.rank(0) }, None); // No set bits before the first
-        assert_eq!(unsafe { ranked_bits.rank(7) }, Some(3)); // 3 set bits in the first byte
+        assert_eq!(ranked_bits.rank(0), None); // No set bits before the first
+        assert_eq!(ranked_bits.rank(7), Some(3)); // 3 set bits in the first byte
     }
 
     #[test]
@@ -169,7 +157,7 @@ mod tests {
         for idx in 0..bv.len() {
             if bv[idx] {
                 assert_eq!(
-                    unsafe { ranked_bits.rank(idx).unwrap() },
+                    ranked_bits.rank(idx).unwrap(),
                     bv[..idx].count_ones(),
                     "Rank mismatch at index {}",
                     idx

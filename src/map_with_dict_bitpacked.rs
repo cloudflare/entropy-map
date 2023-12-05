@@ -74,7 +74,7 @@ where
 
             if let Some(&offset) = offsets_cache.get(&v) {
                 // re-use dictionary offset if found in cache
-                values_index.push(offset)
+                values_index.push(offset);
             } else {
                 // store current dictionary length as an offset in both index and cache
                 let offset = values_dict.len();
@@ -89,7 +89,7 @@ where
         // pad dictionary to the values block size in bytes for smooth SIMD decoding
         values_dict.resize(values_dict.len() + 4 * VALUES_BLOCK_LEN, 0);
 
-        let mphf = Mphf::from_slice(&keys, gamma).map_err(|e| Error::MphfError(e))?;
+        let mphf = Mphf::from_slice(&keys, gamma).map_err(Error::MphfError)?;
 
         // Re-order keys and values_index according to mphf
         for i in 0..keys.len() {
@@ -234,7 +234,7 @@ fn pack_values(values: &[u32], dict: &mut Vec<u8>) {
         // append bits width and bit-packed values block to the dictionary
         let size = (block.len() * (num_bits as usize)).div_ceil(8);
         dict.push(num_bits);
-        dict.extend_from_slice(&values_packed_block[..size])
+        dict.extend_from_slice(&values_packed_block[..size]);
     }
 }
 
@@ -242,7 +242,7 @@ fn pack_values(values: &[u32], dict: &mut Vec<u8>) {
 /// each block consists of bits width followed by bit-packed integers bytes
 fn unpack_values(dict: &[u8], res: &mut [u32]) {
     let bitpacker = BitPacker1x::new();
-    let mut dict = &dict[..];
+    let mut dict = dict;
     for block in res.chunks_mut(VALUES_BLOCK_LEN) {
         let mut values_block = [0u32; VALUES_BLOCK_LEN];
 
@@ -252,7 +252,7 @@ fn unpack_values(dict: &[u8], res: &mut [u32]) {
 
         // bit-unpack values block
         let size = (block.len() * (num_bits as usize)).div_ceil(8);
-        bitpacker.decompress(&dict, &mut values_block, num_bits);
+        bitpacker.decompress(dict, &mut values_block, num_bits);
         dict = &dict[size..];
 
         block.copy_from_slice(&values_block[..block.len()]);
@@ -364,7 +364,7 @@ pub mod tests {
                 dict.truncate(0);
 
                 pack_values(&values, &mut dict);
-                assert!(dict.len() > 0);
+                assert!(!dict.is_empty());
 
                 dict.resize(dict.len() + 4 * VALUES_BLOCK_LEN, 0);
                 unpacked_values.resize(n, 0);
@@ -404,7 +404,7 @@ pub mod tests {
         // Test get_values, contains_key
         let mut values_buf = vec![0; values_num];
         for (key, value) in &original_map {
-            assert_eq!(map.get_values(key, &mut values_buf), true);
+            assert!(map.get_values(key, &mut values_buf));
             assert_eq!(value, &values_buf);
             assert!(map.contains_key(key));
         }

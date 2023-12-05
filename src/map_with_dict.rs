@@ -54,7 +54,7 @@ where
 
             if let Some(&offset) = offsets_cache.get(&v) {
                 // re-use dictionary offset if found in cache
-                values_index.push(offset)
+                values_index.push(offset);
             } else {
                 // store current dictionary length as an offset in both index and cache
                 let offset = values_dict.len();
@@ -93,12 +93,12 @@ where
 
         // SAFETY: `idx` is always within bounds (ensured during construction)
         unsafe {
-            if self.keys.get_unchecked(idx) != key {
-                None
-            } else {
+            if self.keys.get_unchecked(idx) == key {
                 // SAFETY: `idx` and `value_idx` are always within bounds (ensure during construction)
                 let value_idx = *self.values_index.get_unchecked(idx);
                 Some(self.values_dict.get_unchecked(value_idx))
+            } else {
+                None
             }
         }
     }
@@ -194,12 +194,12 @@ where
 
         // SAFETY: `idx` is always within bounds (ensured during construction)
         unsafe {
-            if self.keys.get_unchecked(idx) != key {
-                None
-            } else {
+            if self.keys.get_unchecked(idx) == key {
                 // SAFETY: `idx` and `value_idx` are always within bounds (ensure during construction)
                 let value_idx = *self.values_index.get_unchecked(idx) as usize;
                 Some(self.values_dict.get_unchecked(value_idx))
+            } else {
+                None
             }
         }
     }

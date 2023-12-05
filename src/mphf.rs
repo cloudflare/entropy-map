@@ -121,7 +121,7 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
                 level,
                 groups,
                 group_seed,
-                &hashes,
+                hashes,
                 &mut group_bits,
                 &mut best_group_seeds,
             );
@@ -254,7 +254,7 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
             groups_before += groups as usize;
         }
 
-        return None;
+        None
     }
 
     /// Returns the total number of bytes occupied by `Mphf`

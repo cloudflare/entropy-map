@@ -397,4 +397,30 @@ mod tests {
         (32, 8, 100000, 100, "bits: 2.10 total_levels: 9 avg_levels: 1.63"),
         (32, 8, 100000, 200, "bits: 2.71 total_levels: 4 avg_levels: 1.05"),
     );
+
+    #[test]
+    fn test_rkyv() {
+        let n = 10000;
+        let keys = (0..n as u64).collect::<Vec<u64>>();
+        let mphf = Mphf::<32, 4>::from_slice(&keys, 2.0).expect("failed to create mphf");
+        let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&mphf).unwrap();
+
+        assert_eq!(rkyv_bytes.len(), 3804);
+
+        let rkyv_mphf = rkyv::check_archived_root::<Mphf<32, 4>>(&rkyv_bytes).unwrap();
+
+        // Ensure that all keys are assigned unique index which is less than `n`
+        let mut set = HashSet::with_capacity(n);
+        for key in &keys {
+            let idx = mphf.get(key).unwrap();
+            let rkyv_idx = rkyv_mphf.get(key).unwrap();
+
+            assert_eq!(idx, rkyv_idx);
+            assert!(idx < n, "idx = {} n = {}", idx, n);
+            if !set.insert(idx) {
+                panic!("duplicate idx = {} for key {}", idx, key);
+            }
+        }
+        assert_eq!(set.len(), n);
+    }
 }

@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::mem::{size_of, size_of_val};
+use std::mem::size_of_val;
 
 use fxhash::FxHasher;
 use num::{PrimInt, Unsigned};
@@ -25,13 +25,13 @@ where
     H: Hasher + Default,
 {
     /// Minimally Perfect Hash Function for keys indices retrieval
-    pub(crate) mphf: Mphf<B, S, ST, H>,
+    mphf: Mphf<B, S, ST, H>,
     /// Map keys
-    pub(crate) keys: Box<[K]>,
+    keys: Box<[K]>,
     /// Points to the value index in the dictionary
-    pub(crate) values_index: Box<[usize]>,
+    values_index: Box<[usize]>,
     /// Map unique values
-    pub(crate) values_dict: Box<[V]>,
+    values_dict: Box<[V]>,
 }
 
 impl<K, V> MapWithDict<K, V>
@@ -66,7 +66,7 @@ where
 
         let mphf = Mphf::from_slice(&keys, gamma)?;
 
-        // Re-order keys and values_index according to mphf
+        // Re-order `keys` and `values_index` according to `mphf`
         for i in 0..keys.len() {
             loop {
                 let idx = mphf.get(&keys[i]).unwrap();
@@ -96,9 +96,9 @@ where
             if self.keys.get_unchecked(idx) != key {
                 None
             } else {
-                let dict_idx = *self.values_index.get_unchecked(idx);
-                // SAFETY: `dict_idx` is always within bounds (ensure during construction)
-                Some(self.values_dict.get_unchecked(dict_idx))
+                // SAFETY: `idx` and `value_idx` are always within bounds (ensure during construction)
+                let value_idx = *self.values_index.get_unchecked(idx);
+                Some(self.values_dict.get_unchecked(value_idx))
             }
         }
     }
@@ -132,9 +132,9 @@ where
         self.keys
             .iter()
             .zip(self.values_index.iter())
-            .map(move |(key, &dict_idx)| {
-                // SAFETY: `dict_idx` is always within bounds (ensured during construction)
-                let value = unsafe { self.values_dict.get_unchecked(dict_idx) };
+            .map(move |(key, &value_idx)| {
+                // SAFETY: `value_idx` is always within bounds (ensured during construction)
+                let value = unsafe { self.values_dict.get_unchecked(value_idx) };
                 (key, value)
             })
     }
@@ -148,9 +148,9 @@ where
     /// Returns an iterator over the values of the map.
     #[inline]
     pub fn values(&self) -> impl Iterator<Item = &V> {
-        self.values_index.iter().map(move |&dict_idx| {
-            // SAFETY: `dict_idx` is always within bounds (ensured during construction)
-            unsafe { self.values_dict.get_unchecked(dict_idx) }
+        self.values_index.iter().map(move |&value_idx| {
+            // SAFETY: `value_idx` is always within bounds (ensured during construction)
+            unsafe { self.values_dict.get_unchecked(value_idx) }
         })
     }
 
@@ -159,9 +159,9 @@ where
     pub fn size(&self) -> usize {
         size_of_val(self)
             + self.mphf.size()
-            + self.keys.len() * size_of::<K>()
-            + self.values_index.len() * size_of::<usize>()
-            + self.values_dict.len() * size_of::<V>()
+            + size_of_val(self.keys.as_ref())
+            + size_of_val(self.values_index.as_ref())
+            + size_of_val(self.values_dict.as_ref())
     }
 }
 
@@ -179,25 +179,54 @@ where
     }
 }
 
+/// Implement `get` for `Archived` version of `MapWithDict` if feature is enabled
+#[cfg(feature = "rkyv_derive")]
+impl<K, V> ArchivedMapWithDict<K, V>
+where
+    K: PartialEq + Hash + rkyv::Archive,
+    K::Archived: PartialEq<K>,
+    V: rkyv::Archive,
+{
+    /// Retrieves the `Archived` value for a given key using `Archived` MPHF, returning `None` if key is not present.
+    #[inline]
+    pub fn get(&self, key: &K) -> Option<&V::Archived> {
+        let idx = self.mphf.get(key)?;
+
+        // SAFETY: `idx` is always within bounds (ensured during construction)
+        unsafe {
+            if self.keys.get_unchecked(idx) != key {
+                None
+            } else {
+                // SAFETY: `idx` and `value_idx` are always within bounds (ensure during construction)
+                let value_idx = *self.values_index.get_unchecked(idx) as usize;
+                Some(self.values_dict.get_unchecked(value_idx))
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
 
-    #[test]
-    fn test_map_with_dict() {
+    fn gen_map(items_num: usize) -> HashMap<u64, u32> {
         let mut rng = ChaCha8Rng::seed_from_u64(123);
-        let items_num = 1000;
 
-        // Collect original key-value pairs directly into a HashMap
-        let original_map: HashMap<u64, u32> = (0..items_num)
+        (0..items_num)
             .map(|_| {
                 let key = rng.gen::<u64>();
                 let value = rng.gen_range(1..=10);
                 (key, value)
             })
-            .collect();
+            .collect()
+    }
+
+    #[test]
+    fn test_map_with_dict() {
+        // Collect original key-value pairs directly into a HashMap
+        let original_map = gen_map(1000);
 
         // Create the map from the iterator
         let map = MapWithDict::try_from(original_map.clone()).unwrap();
@@ -230,6 +259,23 @@ pub mod tests {
         }
 
         // Test size
-        assert_eq!(map.size(), 16620);
+        assert_eq!(map.size(), 16612);
+    }
+
+    #[test]
+    fn test_rkyv() {
+        // create regular `HashMap`, then `MapWithDict`, then serialize to `rkyv` bytes.
+        let original_map = gen_map(1000);
+        let map = MapWithDict::try_from(original_map.clone()).unwrap();
+        let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&map).unwrap();
+
+        assert_eq!(rkyv_bytes.len(), 12464);
+
+        let rkyv_map = rkyv::check_archived_root::<MapWithDict<u64, u32>>(&rkyv_bytes).unwrap();
+
+        // Test get on `Archived` version
+        for (k, v) in original_map.iter() {
+            assert_eq!(v, rkyv_map.get(k).unwrap());
+        }
     }
 }

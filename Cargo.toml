@@ -42,6 +42,10 @@ harness = false
 name = "map_with_dict_benchmark"
 harness = false
 
+[[bench]]
+name = "map_with_dict_bitpacked_benchmark"
+harness = false
+
 [profile.bench]
 debug = true
 

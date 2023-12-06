@@ -56,12 +56,12 @@ pub fn map_with_dict_benchmark(c: &mut Criterion) {
     let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&map).unwrap();
     println!("map_with_dict rkyv serialization took: {:?}", t0.elapsed());
 
-    let rkyv_mphf = rkyv::check_archived_root::<MapWithDict<u64, u32>>(&rkyv_bytes).unwrap();
+    let rkyv_map = rkyv::check_archived_root::<MapWithDict<u64, u32>>(&rkyv_bytes).unwrap();
 
     group.bench_function("get-rkyv", |b| {
         b.iter(|| {
             for key in original_map.keys().take(query_n) {
-                rkyv_mphf.get(black_box(key)).unwrap();
+                rkyv_map.get(black_box(key)).unwrap();
             }
         });
     });

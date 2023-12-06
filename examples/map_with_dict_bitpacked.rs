@@ -1,4 +1,4 @@
-use entropy_map::map_with_dict_bitpacked::MapWithDictBitpacked;
+use entropy_map::MapWithDictBitpacked;
 use std::collections::HashMap;
 
 fn main() {

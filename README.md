@@ -9,7 +9,7 @@
 ## Getting Started
 Simple example to quickly get started:
 ```rust
-use entropy_map::mphf::Mphf;
+use entropy_map::Mphf;
 
 let keys = [1, 2, 3, 4, 5];
 let mphf = Mphf::<32, 8>::from_slice(&keys, 2.0).unwrap();

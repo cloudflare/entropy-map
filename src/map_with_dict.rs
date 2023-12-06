@@ -14,7 +14,7 @@ use std::mem::size_of_val;
 use fxhash::FxHasher;
 use num::{PrimInt, Unsigned};
 
-use crate::mphf::{Error, Mphf, DEFAULT_GAMMA};
+use crate::mphf::{Mphf, MphfError, DEFAULT_GAMMA};
 
 /// An efficient, immutable hash map with values dictionary-packed for optimized space usage.
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
@@ -40,7 +40,7 @@ where
     V: Eq + Clone + Hash,
 {
     /// Constructs a `MapWithDict` from an iterator of key-value pairs and MPHF function params.
-    pub fn from_iter_with_params<I>(iter: I, gamma: f32) -> Result<Self, Error>
+    pub fn from_iter_with_params<I>(iter: I, gamma: f32) -> Result<Self, MphfError>
     where
         I: IntoIterator<Item = (K, V)>,
     {
@@ -171,7 +171,7 @@ where
     K: PartialEq + Hash,
     V: Eq + Clone + Hash,
 {
-    type Error = Error;
+    type Error = MphfError;
 
     #[inline]
     fn try_from(value: HashMap<K, V>) -> Result<Self, Self::Error> {
@@ -206,7 +206,7 @@ where
 }
 
 #[cfg(test)]
-pub mod tests {
+mod tests {
     use super::*;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;

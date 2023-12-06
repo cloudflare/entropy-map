@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::env;
 use std::time::Instant;
 
-use entropy_map::map_with_dict_bitpacked::MapWithDictBitpacked;
+use entropy_map::MapWithDictBitpacked;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use rand::{Rng, SeedableRng};

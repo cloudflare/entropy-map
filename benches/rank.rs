@@ -1,7 +1,7 @@
 use std::env;
 use std::time::Instant;
 
-use entropy_map::rank::{RankedBits, RankedBitsAccess};
+use entropy_map::{RankedBits, RankedBitsAccess};
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use rand::prelude::SliceRandom;

@@ -43,7 +43,7 @@ where
 #[derive(Debug)]
 pub enum Error {
     /// Error occurred during mphf construction
-    MphfError(crate::mphf::Error),
+    MphfError(crate::mphf::MphfError),
     /// Values lengths are not equal
     NotEqualValuesLengths,
 }
@@ -292,7 +292,7 @@ where
 }
 
 #[cfg(test)]
-pub mod tests {
+mod tests {
     use super::*;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;

@@ -1,7 +1,7 @@
 use std::env;
 use std::time::Instant;
 
-use entropy_map::mphf::Mphf;
+use entropy_map::Mphf;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use rand::random;

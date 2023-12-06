@@ -1,4 +1,4 @@
-use entropy_map::map_with_dict::MapWithDict;
+use entropy_map::MapWithDict;
 use std::collections::HashMap;
 
 fn main() {

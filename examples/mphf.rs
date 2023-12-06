@@ -1,4 +1,4 @@
-use entropy_map::mphf::{Mphf, DEFAULT_GAMMA};
+use entropy_map::{Mphf, DEFAULT_GAMMA};
 
 fn main() {
     // Initialize MPHF with a small set of keys using `B = 32`, `S = 8` and `gamma = 2.0`.

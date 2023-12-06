@@ -1,9 +1,9 @@
-use entropy_map::mphf::Mphf;
+use entropy_map::mphf::{Mphf, DEFAULT_GAMMA};
 
 fn main() {
     // Initialize MPHF with a small set of keys using `B = 32`, `S = 8` and `gamma = 2.0`.
     let keys = [1, 2, 3, 4, 5];
-    let mphf = Mphf::<32, 8>::from_slice(&keys, 2.0).expect("failed to create MPHF");
+    let mphf = Mphf::<32, 8>::from_slice(&keys, DEFAULT_GAMMA).expect("failed to create MPHF");
 
     // Test keys that are present in the MPHF
     assert!(mphf.get(&1).is_some());

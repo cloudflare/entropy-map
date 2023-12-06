@@ -14,7 +14,7 @@ use std::mem::size_of_val;
 use fxhash::FxHasher;
 use num::{PrimInt, Unsigned};
 
-use crate::mphf::{Error, Mphf};
+use crate::mphf::{Error, Mphf, DEFAULT_GAMMA};
 
 /// An efficient, immutable hash map with values dictionary-packed for optimized space usage.
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
@@ -175,7 +175,7 @@ where
 
     #[inline]
     fn try_from(value: HashMap<K, V>) -> Result<Self, Self::Error> {
-        MapWithDict::from_iter_with_params(value, 2.0)
+        MapWithDict::from_iter_with_params(value, DEFAULT_GAMMA)
     }
 }
 

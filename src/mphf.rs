@@ -55,6 +55,9 @@ pub enum Error {
     InvalidGammaParameter,
 }
 
+/// Default `gamma` parameter for MPHF.
+pub const DEFAULT_GAMMA: f32 = 2.0;
+
 impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default> Mphf<B, S, ST, H> {
     /// Initializes `Mphf` using slice of `keys` and parameter `gamma`.
     pub fn from_slice<K: Hash>(keys: &[K], gamma: f32) -> Result<Self, Error> {
@@ -402,7 +405,7 @@ mod tests {
     fn test_rkyv() {
         let n = 10000;
         let keys = (0..n as u64).collect::<Vec<u64>>();
-        let mphf = Mphf::<32, 4>::from_slice(&keys, 2.0).expect("failed to create mphf");
+        let mphf = Mphf::<32, 4>::from_slice(&keys, DEFAULT_GAMMA).expect("failed to create mphf");
         let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&mphf).unwrap();
 
         assert_eq!(rkyv_bytes.len(), 3804);

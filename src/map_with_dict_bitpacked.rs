@@ -19,7 +19,7 @@ use bitpacking::{BitPacker, BitPacker1x};
 use fxhash::FxHasher;
 use num::{PrimInt, Unsigned};
 
-use crate::mphf::Mphf;
+use crate::mphf::{Mphf, DEFAULT_GAMMA};
 
 /// An efficient, immutable hash map with bit-packed `Vec<u32>` values for optimized space usage.
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
@@ -206,7 +206,7 @@ where
 
     #[inline]
     fn try_from(value: HashMap<K, Vec<u32>>) -> Result<Self, Self::Error> {
-        MapWithDictBitpacked::from_iter_with_params(value, 2.0)
+        MapWithDictBitpacked::from_iter_with_params(value, DEFAULT_GAMMA)
     }
 }
 

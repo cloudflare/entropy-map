@@ -45,7 +45,7 @@ pub fn mphf_benchmark(c: &mut Criterion) {
         let mphf = Mphf::<32, 8>::from_slice(&items, gamma).expect("failed to build mphf");
         let bits = (mphf.size() as f32) * 8.0 / (n as f32);
         println!(
-            "mphf ({:.1}) construction took: {:?}, bits per key = {:.2}",
+            "mphf ({:.1}) construction took: {:?}, bits per key: {:.2}",
             gamma,
             t0.elapsed(),
             bits

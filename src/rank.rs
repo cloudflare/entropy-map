@@ -102,7 +102,7 @@ impl RankedBits {
     }
 
     /// Returns the total number of bytes occupied by `RankedBits`
-    pub(crate) fn size(&self) -> usize {
+    pub fn size(&self) -> usize {
         size_of_val(self) + size_of_val(self.bits.as_ref()) + size_of_val(self.l12_ranks.as_ref())
     }
 }

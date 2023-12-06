@@ -31,19 +31,19 @@ default = ["rkyv_derive"]
 rkyv_derive = ["rkyv", "bytecheck"]
 
 [[bench]]
-name = "rank_benchmark"
+name = "rank"
 harness = false
 
 [[bench]]
-name = "mphf_benchmark"
+name = "mphf"
 harness = false
 
 [[bench]]
-name = "map_with_dict_benchmark"
+name = "map_with_dict"
 harness = false
 
 [[bench]]
-name = "map_with_dict_bitpacked_benchmark"
+name = "map_with_dict_bitpacked"
 harness = false
 
 [profile.bench]

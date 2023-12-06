@@ -15,7 +15,7 @@ use rand::random;
 /// # ranked_bits/rank
 /// time:   [616.89 µs 629.04 µs 643.46 µs]
 /// thrpt:  [1.5541 Gelem/s 1.5897 Gelem/s 1.6210 Gelem/s]
-pub fn rank_benchmark(c: &mut Criterion) {
+pub fn benchmark(c: &mut Criterion) {
     let n: usize = env::var("N").unwrap_or("1000000".to_string()).parse().unwrap();
     let query_n: usize = env::var("QN").unwrap_or("1000000".to_string()).parse().unwrap();
     let n_u64 = n / 64;
@@ -51,6 +51,6 @@ pub fn rank_benchmark(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default();
-    targets = rank_benchmark,
+    targets = benchmark,
 }
 criterion_main!(benches);

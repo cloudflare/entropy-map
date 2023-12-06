@@ -21,7 +21,7 @@ use rand_chacha::ChaCha8Rng;
 /// # map_with_dict_bitpacked/get_values-rkyv
 /// time:   [167.92 ms 168.82 ms 169.65 ms]
 /// thrpt:  [5.8946 Melem/s 5.9233 Melem/s 5.9553 Melem/s]
-pub fn map_with_dict_bitpacked_benchmark(c: &mut Criterion) {
+pub fn benchmark(c: &mut Criterion) {
     let n: usize = env::var("N").unwrap_or("1000000".to_string()).parse().unwrap();
     let query_n: usize = env::var("QN").unwrap_or("1000000".to_string()).parse().unwrap();
 
@@ -73,6 +73,6 @@ pub fn map_with_dict_bitpacked_benchmark(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default();
-    targets = map_with_dict_bitpacked_benchmark,
+    targets = benchmark,
 }
 criterion_main!(benches);

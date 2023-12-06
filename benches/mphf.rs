@@ -29,7 +29,7 @@ use rand::random;
 /// mphf (2.0) rkyv serialization took: 165.901µs
 /// time:   [4.6885 ms 4.7272 ms 4.7728 ms]
 /// thrpt:  [209.52 Melem/s 211.54 Melem/s 213.29 Melem/s]
-pub fn mphf_benchmark(c: &mut Criterion) {
+pub fn benchmark(c: &mut Criterion) {
     let n: usize = env::var("N").unwrap_or("1000000".to_string()).parse().unwrap();
     let query_n: usize = env::var("QN").unwrap_or("1000000".to_string()).parse().unwrap();
 
@@ -80,6 +80,6 @@ pub fn mphf_benchmark(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default();
-    targets = mphf_benchmark,
+    targets = benchmark,
 }
 criterion_main!(benches);

@@ -21,7 +21,7 @@ use rand_chacha::ChaCha8Rng;
 /// # map_with_dict/get-rkyv
 /// time:   [74.267 ms 74.681 ms 75.225 ms]
 /// thrpt:  [13.293 Melem/s 13.390 Melem/s 13.465 Melem/s]
-pub fn map_with_dict_benchmark(c: &mut Criterion) {
+pub fn benchmark(c: &mut Criterion) {
     let n: usize = env::var("N").unwrap_or("1000000".to_string()).parse().unwrap();
     let query_n: usize = env::var("QN").unwrap_or("1000000".to_string()).parse().unwrap();
 
@@ -72,6 +72,6 @@ pub fn map_with_dict_benchmark(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default();
-    targets = map_with_dict_benchmark,
+    targets = benchmark,
 }
 criterion_main!(benches);

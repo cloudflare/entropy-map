@@ -399,8 +399,10 @@ mod tests {
         (32, 0, 10000, 100, "bits: 3.64 total_levels: 14 avg_levels: 2.72"),
         (32, 8, 100000, 100, "bits: 2.10 total_levels: 9 avg_levels: 1.63"),
         (32, 8, 100000, 200, "bits: 2.71 total_levels: 4 avg_levels: 1.05"),
+        (32, 6, 100000, 200, "bits: 2.82 total_levels: 4 avg_levels: 1.10"),
     );
 
+    #[cfg(feature = "rkyv_derive")]
     #[test]
     fn test_rkyv() {
         let n = 10000;

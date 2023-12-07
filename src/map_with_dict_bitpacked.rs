@@ -48,9 +48,11 @@ pub enum Error {
     NotEqualValuesLengths,
 }
 
-impl<K> MapWithDictBitpacked<K>
+impl<K, const B: usize, const S: usize, ST, H> MapWithDictBitpacked<K, B, S, ST, H>
 where
-    K: Hash + PartialEq,
+    K: Hash + PartialEq + Clone,
+    ST: PrimInt + Unsigned,
+    H: Hasher + Default,
 {
     /// Constructs a `MapWithDictBitpacked` from an iterator of key-value pairs and MPHF function params.
     pub fn from_iter_with_params<I>(iter: I, gamma: f32) -> Result<Self, Error>
@@ -66,7 +68,7 @@ where
         let v_len = iter.peek().map_or(0, |(_, v)| v.len());
 
         for (k, v) in iter {
-            keys.push(k);
+            keys.push(k.clone());
 
             if v.len() != v_len {
                 return Err(Error::NotEqualValuesLengths);
@@ -200,7 +202,7 @@ where
 /// Creates a `MapWithDictBitpacked` from a `HashMap`.
 impl<K> TryFrom<HashMap<K, Vec<u32>>> for MapWithDictBitpacked<K>
 where
-    K: PartialEq + Hash,
+    K: PartialEq + Hash + Clone,
 {
     type Error = Error;
 
@@ -261,10 +263,12 @@ fn unpack_values(dict: &[u8], res: &mut [u32]) {
 
 /// Implement `get` for `Archived` version of `MapWithDictBitpacked` if feature is enabled
 #[cfg(feature = "rkyv_derive")]
-impl<K> ArchivedMapWithDictBitpacked<K>
+impl<K, const B: usize, const S: usize, ST, H> ArchivedMapWithDictBitpacked<K, B, S, ST, H>
 where
     K: PartialEq + Hash + rkyv::Archive,
     K::Archived: PartialEq<K>,
+    ST: PrimInt + Unsigned + rkyv::Archive<Archived = ST>,
+    H: Hasher + Default,
 {
     /// Retrieves `u32` values from `Archived` version of `MapWithDictBitpacked` for a given key
     /// using `Archived` mphf, returning `false` if key is not present.
@@ -428,6 +432,7 @@ mod tests {
         assert_eq!(map.size(), 22664);
     }
 
+    #[cfg(feature = "rkyv_derive")]
     #[test]
     fn test_rkyv() {
         // create regular `HashMap`, then `MapWithDictBitpacked`, then serialize to `rkyv` bytes.

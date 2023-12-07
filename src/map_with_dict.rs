@@ -34,10 +34,12 @@ where
     values_dict: Box<[V]>,
 }
 
-impl<K, V> MapWithDict<K, V>
+impl<K, V, const B: usize, const S: usize, ST, H> MapWithDict<K, V, B, S, ST, H>
 where
-    K: PartialEq + Hash,
+    K: PartialEq + Hash + Clone,
     V: Eq + Clone + Hash,
+    ST: PrimInt + Unsigned,
+    H: Hasher + Default,
 {
     /// Constructs a `MapWithDict` from an iterator of key-value pairs and MPHF function params.
     pub fn from_iter_with_params<I>(iter: I, gamma: f32) -> Result<Self, MphfError>
@@ -50,7 +52,7 @@ where
         let mut offsets_cache = HashMap::new();
 
         for (k, v) in iter {
-            keys.push(k);
+            keys.push(k.clone());
 
             if let Some(&offset) = offsets_cache.get(&v) {
                 // re-use dictionary offset if found in cache
@@ -168,7 +170,7 @@ where
 /// Creates a `MapWithDict` from a `HashMap`.
 impl<K, V> TryFrom<HashMap<K, V>> for MapWithDict<K, V>
 where
-    K: PartialEq + Hash,
+    K: PartialEq + Hash + Clone,
     V: Eq + Clone + Hash,
 {
     type Error = MphfError;
@@ -181,11 +183,13 @@ where
 
 /// Implement `get` for `Archived` version of `MapWithDict` if feature is enabled
 #[cfg(feature = "rkyv_derive")]
-impl<K, V> ArchivedMapWithDict<K, V>
+impl<K, V, const B: usize, const S: usize, ST, H> ArchivedMapWithDict<K, V, B, S, ST, H>
 where
     K: PartialEq + Hash + rkyv::Archive,
     K::Archived: PartialEq<K>,
     V: rkyv::Archive,
+    ST: PrimInt + Unsigned + rkyv::Archive<Archived = ST>,
+    H: Hasher + Default,
 {
     /// Retrieves the `Archived` value for a given key using `Archived` MPHF, returning `None` if key is not present.
     #[inline]
@@ -262,6 +266,7 @@ mod tests {
         assert_eq!(map.size(), 16612);
     }
 
+    #[cfg(feature = "rkyv_derive")]
     #[test]
     fn test_rkyv() {
         // create regular `HashMap`, then `MapWithDict`, then serialize to `rkyv` bytes.

@@ -18,12 +18,15 @@ fn main() {
     // Test a key that is not present in the MPHF
     assert_eq!(map.get(&4), None);
 
-    // Serialize map to rkyv and test again
-    let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&map).unwrap();
-    let rkyv_map = rkyv::check_archived_root::<MapWithDict<u64, String>>(&rkyv_bytes).unwrap();
+    #[cfg(feature = "rkyv_derive")]
+    {
+        // Serialize map to rkyv and test again
+        let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&map).unwrap();
+        let rkyv_map = rkyv::check_archived_root::<MapWithDict<u64, String>>(&rkyv_bytes).unwrap();
 
-    assert_eq!(rkyv_map.get(&1).unwrap(), &"Dog".to_string());
-    assert_eq!(rkyv_map.get(&2).unwrap(), &"Cat".to_string());
-    assert_eq!(rkyv_map.get(&3).unwrap(), &"Dog".to_string());
-    assert_eq!(rkyv_map.get(&4), None);
+        assert_eq!(rkyv_map.get(&1).unwrap(), &"Dog".to_string());
+        assert_eq!(rkyv_map.get(&2).unwrap(), &"Cat".to_string());
+        assert_eq!(rkyv_map.get(&3).unwrap(), &"Dog".to_string());
+        assert_eq!(rkyv_map.get(&4), None);
+    }
 }

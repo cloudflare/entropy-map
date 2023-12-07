@@ -21,15 +21,18 @@ fn main() {
     // Test a key that is not present in the MPHF
     assert_eq!(map.get_values(&4, &mut values_buf), false);
 
-    // Serialize map to rkyv and test again
-    let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&map).unwrap();
-    let rkyv_map = rkyv::check_archived_root::<MapWithDictBitpacked<u64>>(&rkyv_bytes).unwrap();
+    #[cfg(feature = "rkyv_derive")]
+    {
+        // Serialize map to rkyv and test again
+        let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&map).unwrap();
+        let rkyv_map = rkyv::check_archived_root::<MapWithDictBitpacked<u64>>(&rkyv_bytes).unwrap();
 
-    assert!(rkyv_map.get_values(&1, &mut values_buf));
-    assert_eq!(values_buf, vec![1, 2, 3]);
-    assert!(rkyv_map.get_values(&2, &mut values_buf));
-    assert_eq!(values_buf, vec![3, 5, 7]);
-    assert!(rkyv_map.get_values(&3, &mut values_buf));
-    assert_eq!(values_buf, vec![1, 2, 3]);
-    assert_eq!(rkyv_map.get_values(&4, &mut values_buf), false);
+        assert!(rkyv_map.get_values(&1, &mut values_buf));
+        assert_eq!(values_buf, vec![1, 2, 3]);
+        assert!(rkyv_map.get_values(&2, &mut values_buf));
+        assert_eq!(values_buf, vec![3, 5, 7]);
+        assert!(rkyv_map.get_values(&3, &mut values_buf));
+        assert_eq!(values_buf, vec![1, 2, 3]);
+        assert_eq!(rkyv_map.get_values(&4, &mut values_buf), false);
+    }
 }

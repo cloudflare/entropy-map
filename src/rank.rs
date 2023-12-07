@@ -108,7 +108,6 @@ impl RankedBits {
 }
 
 /// Implement `rank` for `Archived` version of `RankedBits` if feature is enabled
-#[cfg(feature = "rkyv_derive")]
 impl RankedBitsAccess for RankedBits {
     #[inline]
     fn rank(&self, idx: usize) -> Option<usize> {

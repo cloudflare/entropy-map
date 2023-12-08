@@ -135,15 +135,14 @@ mod tests {
     #[test]
     fn test_rank_and_get() {
         let bits = vec![
-            0b11001010u64, // 3 set bits
-            0b00110111u64, // 5 set bits
-            0b11110000u64, // 4 set bits
+            0b11001010, // 4 set bits
+            0b00110111, // 5 set bits
+            0b11110000, // 4 set bits
         ];
 
         let ranked_bits = RankedBits::new(bits.into_boxed_slice());
-
         assert_eq!(ranked_bits.rank(0), None); // No set bits before the first
-        assert_eq!(ranked_bits.rank(7), Some(3)); // 3 set bits in the first byte
+        assert_eq!(ranked_bits.rank(7), Some(3)); // 3 set bits set before 7-th bit
     }
 
     #[test]

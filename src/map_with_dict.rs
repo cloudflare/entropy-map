@@ -1,11 +1,11 @@
 //! A module providing `MapWithDict`, an immutable hash map implementation.
 //!
 //! `MapWithDict` is a hash map structure that optimizes for space by utilizing a minimal perfect
-//! hash function (MPHF) for indexing map's keys. This enables efficient storage and retrieval, as
-//! it reduces the overall memory footprint by packing unique values into a dictionary. The MPHF
+//! hash function (MPHF) for indexing the map's keys. This enables efficient storage and retrieval,
+//! as it reduces the overall memory footprint by packing unique values into a dictionary. The MPHF
 //! provides direct access to the indices of keys, which correspond to their respective values in
-//! the values dictionary. Keys are stored to ensure that queried with `get` key was present during
-//! construction, otherwise `None` is returned.
+//! the values dictionary. Keys are stored to ensure that `get` operation will return `None` if key
+//! wasn't present in original set.
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};

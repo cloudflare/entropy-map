@@ -45,10 +45,6 @@ const MAX_LEVELS: usize = 32;
 pub enum MphfError {
     /// Error when the maximum number of levels is exceeded during initialization.
     MaxLevelsExceeded,
-    /// Error when the parameter `B` is out of the [1..64] range.
-    InvalidBParameter,
-    /// Error when the parameter `S` is out of the [0..16] range.
-    InvalidSParameter,
     /// Error when the seed type `ST` is too small to store `S` bits
     InvalidSeedType,
     /// Error when the `gamma` parameter is less than 1.0.
@@ -59,21 +55,24 @@ pub enum MphfError {
 pub const DEFAULT_GAMMA: f32 = 2.0;
 
 impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default> Mphf<B, S, ST, H> {
+    /// Ensure that `B` is in [1..64] range
+    const B: usize = {
+        assert!(B >= 1 && B <= 64);
+        B
+    };
+    /// Ensure that `S` is in [0..16] range
+    const S: usize = {
+        assert!(S <= 16);
+        S
+    };
+
     /// Initializes `Mphf` using slice of `keys` and parameter `gamma`.
     pub fn from_slice<K: Hash>(keys: &[K], gamma: f32) -> Result<Self, MphfError> {
-        if B < 1 || B > 64 {
-            return Err(InvalidBParameter);
-        }
-
-        if S > 16 {
-            return Err(InvalidSParameter);
-        }
-
         if gamma < 1.0 {
             return Err(InvalidGammaParameter);
         }
 
-        if ST::from((1 << S) - 1).is_none() {
+        if ST::from((1 << Self::S) - 1).is_none() {
             return Err(InvalidSeedType);
         }
 
@@ -150,12 +149,12 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
     #[inline]
     fn level_size_groups_segments(size: usize) -> (usize, usize) {
         // Calculate the least common multiple of 64 and B
-        let lcm_value = B.lcm(&64);
+        let lcm_value = Self::B.lcm(&64);
 
         // Adjust size to the nearest value that is a multiple of the LCM
         let adjusted_size = size.div_ceil(lcm_value) * lcm_value;
 
-        (adjusted_size / B, adjusted_size / 64)
+        (adjusted_size / Self::B, adjusted_size / 64)
     }
 
     /// Computes group bits for given seed and then updates those groups where seed produced least collisions.
@@ -196,15 +195,15 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
 
         // Update best group bits and seeds
         for (group_idx, best_group_seed) in best_group_seeds.iter_mut().enumerate() {
-            let bit_idx = group_idx * B;
+            let bit_idx = group_idx * Self::B;
             let bit_pos = bit_idx % 64;
             let idx = (bit_idx / 64) * 3;
 
             // SAFETY: `idx` is always within bounds (ensured during calculation)
             let bits = unsafe { group_bits.get_unchecked_mut(idx..idx + 6) };
 
-            let bits_1 = B.min(64 - bit_pos);
-            let bits_2 = B - bits_1;
+            let bits_1 = Self::B.min(64 - bit_pos);
+            let bits_2 = Self::B - bits_1;
             let mask_1 = u64::MAX >> (64 - bits_1);
             let mask_2 = (1 << bits_2) - 1;
 

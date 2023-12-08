@@ -2,7 +2,7 @@
 //!
 //! `MapWithDictBitpacked` is a specialized version of `MapWithDict` optimized for memory usage
 //! by bit-packing its values. It uses a minimal perfect hash function (MPHF) for key indexing.
-//! Unlike `MapWithDict`, this variant stores unique `Vec<u32>` values bit-packed to minimally
+//! Unlike `MapWithDict`, this variant stores unique `Vec<u32>` values bit-packed to the minimum
 //! possible number of bits in the byte dictionary. All values vectors *must* have same length, so
 //! that we don't need to store it which further reduces memory footprint of data structure.
 //!

@@ -1,7 +1,8 @@
 use entropy_map::{Mphf, DEFAULT_GAMMA};
 
 fn main() {
-    // Initialize MPHF with a small set of keys using `B = 32`, `S = 8` and `gamma = 2.0`.
+    // Initialize MPHF with a small set of keys using `B = 32` (group size), `S = 8` (max seed)
+    // and `gamma = 2.0` (speed/size tradeoff). See `README.md` for more details.
     let keys = [1, 2, 3, 4, 5];
     let mphf = Mphf::<32, 8>::from_slice(&keys, DEFAULT_GAMMA).expect("failed to create MPHF");
 

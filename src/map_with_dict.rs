@@ -36,7 +36,7 @@ where
 
 impl<K, V, const B: usize, const S: usize, ST, H> MapWithDict<K, V, B, S, ST, H>
 where
-    K: PartialEq + Hash + Clone,
+    K: Eq + Hash + Clone,
     V: Eq + Clone + Hash,
     ST: PrimInt + Unsigned,
     H: Hasher + Default,
@@ -170,7 +170,7 @@ where
 /// Creates a `MapWithDict` from a `HashMap`.
 impl<K, V> TryFrom<HashMap<K, V>> for MapWithDict<K, V>
 where
-    K: PartialEq + Hash + Clone,
+    K: Eq + Hash + Clone,
     V: Eq + Clone + Hash,
 {
     type Error = MphfError;

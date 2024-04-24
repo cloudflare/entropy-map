@@ -230,14 +230,14 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
     /// Returns the index associated with `key`, within 0 to the key collection size (exclusive).
     /// If `key` was not in the initial collection, returns `None` or an arbitrary value from the range.
     #[inline]
-    pub fn get<K: Hash>(&self, key: &K) -> Option<usize> {
+    pub fn get<K: Hash + ?Sized>(&self, key: &K) -> Option<usize> {
         Self::get_impl(key, &self.level_groups, &self.group_seeds, &self.ranked_bits)
     }
 
     /// Inner implementation of `get` with `level_groups`, `group_seeds` and `ranked_bits` passed
     /// from standard and `Archived` version of `Mphf`.
     #[inline]
-    fn get_impl<K: Hash>(
+    fn get_impl<K: Hash + ?Sized>(
         key: &K,
         level_groups: &[u32],
         group_seeds: &[ST],
@@ -270,7 +270,7 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
 
 /// Computes a 64-bit hash for the given key using the default hasher `H`.
 #[inline]
-fn hash_key<H: Hasher + Default, T: Hash>(key: &T) -> u64 {
+fn hash_key<H: Hasher + Default, T: Hash + ?Sized>(key: &T) -> u64 {
     let mut hasher = H::default();
     key.hash(&mut hasher);
     hasher.finish()
@@ -312,7 +312,7 @@ where
     H: Hasher + Default,
 {
     #[inline]
-    pub fn get<K: Hash>(&self, key: &K) -> Option<usize> {
+    pub fn get<K: Hash + ?Sized>(&self, key: &K) -> Option<usize> {
         Mphf::<B, S, ST, H>::get_impl(key, &self.level_groups, &self.group_seeds, &self.ranked_bits)
     }
 }

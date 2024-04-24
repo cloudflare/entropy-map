@@ -50,3 +50,9 @@ It includes the following key components:
 - Specialized version of `MapWithDict`, further optimized for memory usage when values are `Vec<u32>`.
 - Bit-packs `Vec<u32>` values for minimal space usage using SIMD instructions.
 - Excels in scenarios where values are within a limited range and can be efficiently encoded.
+
+### Set
+Special case of `MapWithDict`, optimized for set membership operations.
+- Immutable set using MPHF for indexing.
+- Stores keys to ensure presence/absence of the key in the set.
+- Optional rkyv support to neable zero-copy serialization/deserialization.

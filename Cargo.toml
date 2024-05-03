@@ -39,14 +39,22 @@ harness = false
 [[bench]]
 name = "mphf"
 harness = false
+required-features = ["rkyv_derive"]
 
 [[bench]]
 name = "map_with_dict"
 harness = false
+required-features = ["rkyv_derive"]
 
 [[bench]]
 name = "map_with_dict_bitpacked"
 harness = false
+required-features = ["rkyv_derive"]
+
+[[bench]]
+name = "set"
+harness = false
+required-features = ["rkyv_derive"]
 
 [profile.bench]
 debug = true

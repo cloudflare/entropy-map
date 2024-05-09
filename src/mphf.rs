@@ -114,7 +114,7 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
         // - 0: hashes bits set for current seed
         // - 1: hashes collision bits set for current seed
         // - 2: hashes bits set for best seed
-        let mut group_bits = vec![0u64; 3 * segments];
+        let mut group_bits = vec![0u64; 3 * segments + 3];
         let mut best_group_seeds = vec![ST::zero(); groups];
 
         // For each seed compute `group_bits` and then update those groups where seed produced less collisions
@@ -130,7 +130,10 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
         }
 
         // finalize best group bits to be returned
-        let best_group_bits: Vec<u64> = group_bits.chunks_exact(3).map(|group_bits| group_bits[2]).collect();
+        let best_group_bits: Vec<u64> = group_bits[..group_bits.len() - 3]
+            .chunks_exact(3)
+            .map(|group_bits| group_bits[2])
+            .collect();
 
         // filter out hashes which are already stored in `best_group_bits`
         hashes.retain(|&hash| {
@@ -168,7 +171,8 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
         best_group_seeds: &mut [ST],
     ) {
         // Reset all group bits except best group bits
-        for bits in group_bits.chunks_exact_mut(3) {
+        let group_bits_len = group_bits.len();
+        for bits in group_bits[..group_bits_len - 3].chunks_exact_mut(3) {
             bits[0] = 0;
             bits[1] = 0;
         }

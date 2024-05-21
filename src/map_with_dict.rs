@@ -212,8 +212,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use paste::paste;
+    use proptest::prelude::*;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
+    use std::collections::{hash_map::RandomState, HashSet};
 
     fn gen_map(items_num: usize) -> HashMap<u64, u32> {
         let mut rng = ChaCha8Rng::seed_from_u64(123);
@@ -283,4 +286,79 @@ mod tests {
             assert_eq!(v, rkyv_map.get(k).unwrap());
         }
     }
+
+    macro_rules! proptest_map_with_dict_model {
+        ($(($b:expr, $s:expr, $gamma:expr)),* $(,)?) => {
+            $(
+                paste! {
+                    proptest! {
+                        #[test]
+                        fn [<proptest_map_with_dict_model_ $b _ $s _ $gamma>](model: HashMap<u64, u64>, arbitrary: HashSet<u64>) {
+                            let entropy_map: MapWithDict<u64, u64, $b, $s> = MapWithDict::from_iter_with_params(
+                                model.clone(),
+                                $gamma as f32 / 100.0
+                            ).unwrap();
+
+                            // Assert that length matches model.
+                            assert_eq!(entropy_map.len(), model.len());
+                            assert_eq!(entropy_map.is_empty(), model.is_empty());
+
+                            // Assert that keys and values match model.
+                            assert_eq!(
+                                HashSet::<_, RandomState>::from_iter(entropy_map.keys()),
+                                HashSet::from_iter(model.keys())
+                            );
+                            assert_eq!(
+                                HashSet::<_, RandomState>::from_iter(entropy_map.values()),
+                                HashSet::from_iter(model.values())
+                            );
+
+                            // Assert that contains and get operations match model for contained elements.
+                            for (k, v) in &model {
+                                assert!(entropy_map.contains_key(&k));
+                                assert_eq!(entropy_map.get(&k), Some(v));
+                            }
+
+                            // Assert that contains and get operations match model for random elements.
+                            for k in arbitrary {
+                                assert_eq!(
+                                    model.contains_key(&k),
+                                    entropy_map.contains_key(&k),
+                                );
+                                assert_eq!(entropy_map.get(&k), model.get(&k));
+                            }
+                        }
+                    }
+                }
+            )*
+        };
+    }
+
+    proptest_map_with_dict_model!(
+        // (1, 8, 100),
+        (2, 8, 100),
+        (4, 8, 100),
+        (7, 8, 100),
+        (8, 8, 100),
+        (15, 8, 100),
+        (16, 8, 100),
+        (23, 8, 100),
+        (24, 8, 100),
+        (31, 8, 100),
+        (32, 8, 100),
+        (33, 8, 100),
+        (48, 8, 100),
+        (53, 8, 100),
+        (61, 8, 100),
+        (63, 8, 100),
+        (64, 8, 100),
+        (32, 7, 100),
+        (32, 5, 100),
+        (32, 4, 100),
+        (32, 3, 100),
+        (32, 1, 100),
+        (32, 0, 100),
+        (32, 8, 200),
+        (32, 6, 200),
+    );
 }

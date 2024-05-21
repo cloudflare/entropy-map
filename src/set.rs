@@ -208,6 +208,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use paste::paste;
+    use proptest::prelude::*;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
 
@@ -283,5 +285,86 @@ mod tests {
         assert!(rkyv_set.contains("a"));
         assert!(rkyv_set.contains("b"));
         assert!(!rkyv_set.contains("c"));
+    }
+
+    macro_rules! proptest_set_model {
+        ($(($b:expr, $s:expr, $gamma:expr)),* $(,)?) => {
+            $(
+                paste! {
+                    proptest! {
+                        #[test]
+                        fn [<proptest_set_model_ $b _ $s _ $gamma>](model: HashSet<u64>, arbitrary: HashSet<u64>) {
+                            let entropy_set: Set<u64, $b, $s> = Set::from_iter_with_params(
+                                model.clone(),
+                                $gamma as f32 / 100.0
+                            ).unwrap();
+
+                            // Assert that length matches model.
+                            assert_eq!(entropy_set.len(), model.len());
+                            assert_eq!(entropy_set.is_empty(), model.is_empty());
+
+                            // Assert that contains operations match model for contained elements.
+                            for elm in &model {
+                                assert!(entropy_set.contains(&elm));
+                            }
+
+                            // Assert that contains operations match model for random elements.
+                            for elm in arbitrary {
+                                assert_eq!(
+                                    model.contains(&elm),
+                                    entropy_set.contains(&elm),
+                                );
+                            }
+                        }
+                    }
+                }
+            )*
+        };
+    }
+
+    proptest_set_model!(
+        // (1, 8, 100),
+        (2, 8, 100),
+        (4, 8, 100),
+        (7, 8, 100),
+        (8, 8, 100),
+        (15, 8, 100),
+        (16, 8, 100),
+        (23, 8, 100),
+        (24, 8, 100),
+        (31, 8, 100),
+        (32, 8, 100),
+        (33, 8, 100),
+        (48, 8, 100),
+        (53, 8, 100),
+        (61, 8, 100),
+        (63, 8, 100),
+        (64, 8, 100),
+        (32, 7, 100),
+        (32, 5, 100),
+        (32, 4, 100),
+        (32, 3, 100),
+        (32, 1, 100),
+        (32, 0, 100),
+        (32, 8, 200),
+        (32, 6, 200),
+    );
+
+    proptest! {
+        #[test]
+        fn test_set_contains(model: HashSet<u64>, arbitrary: HashSet<u64>) {
+            let entropy_set = Set::try_from(model.clone()).unwrap();
+
+            for elm in &model {
+                assert!(entropy_set.contains(&elm));
+            }
+
+            for elm in arbitrary {
+                assert_eq!(
+                    model.contains(&elm),
+                    entropy_set.contains(&elm),
+                );
+            }
+        }
     }
 }

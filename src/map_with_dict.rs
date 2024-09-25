@@ -207,6 +207,19 @@ where
             }
         }
     }
+
+    /// Returns an iterator over the archived map, yielding archived key-value pairs.
+    #[inline]
+    pub fn iter(&self) -> impl Iterator<Item=(&K::Archived, &V::Archived)> {
+        self.keys
+            .iter()
+            .zip(self.values_index.iter())
+            .map(move |(key, &value_idx)| {
+                // SAFETY: `value_idx` is always within bounds (ensured during construction)
+                let value = unsafe { self.values_dict.get_unchecked(value_idx as usize) };
+                (key, value)
+            })
+    }
 }
 
 #[cfg(test)]
@@ -284,6 +297,11 @@ mod tests {
         // Test get on `Archived` version
         for (k, v) in original_map.iter() {
             assert_eq!(v, rkyv_map.get(k).unwrap());
+        }
+
+        // Test iter on `Archived` version
+        for (&k, &v) in rkyv_map.iter() {
+            assert_eq!(original_map.get(&k), Some(&v));
         }
     }
 

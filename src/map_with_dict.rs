@@ -7,6 +7,7 @@
 //! the values dictionary. Keys are stored to ensure that `get` operation will return `None` if key
 //! wasn't present in original set.
 
+use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::mem::size_of_val;
@@ -88,9 +89,23 @@ where
         })
     }
 
-    /// Retrieves the value for a given key using a minimal perfect hash function, returning `None` if key is not present.
+    /// Returns a reference to the value corresponding to the key. Returns `None` if the key is
+    /// not present in the map.
+    ///
+    /// # Examples
+    /// ```
+    /// # use std::collections::HashMap;
+    /// # use entropy_map::MapWithDict;
+    /// let map = MapWithDict::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
+    /// assert_eq!(map.get(&1), Some(&2));
+    /// assert_eq!(map.get(&5), None);
+    /// ```
     #[inline]
-    pub fn get(&self, key: &K) -> Option<&V> {
+    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<&V>
+    where
+        K: Borrow<Q> + PartialEq<Q>,
+        Q: Hash + Eq,
+    {
         let idx = self.mphf.get(key)?;
 
         // SAFETY: `idx` is always within bounds (ensured during construction)
@@ -106,20 +121,51 @@ where
     }
 
     /// Returns the number of key-value pairs in the map.
+    ///
+    /// # Examples
+    /// ```
+    /// # use std::collections::HashMap;
+    /// # use entropy_map::MapWithDict;
+    /// let map = MapWithDict::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
+    /// assert_eq!(map.len(), 2);
+    /// ```
     #[inline]
     pub fn len(&self) -> usize {
         self.keys.len()
     }
 
     /// Returns `true` if the map contains no elements.
+    ///
+    /// # Examples
+    /// ```
+    /// # use std::collections::HashMap;
+    /// # use entropy_map::MapWithDict;
+    /// let map = MapWithDict::try_from(HashMap::from([(0, 0); 0])).unwrap();
+    /// assert_eq!(map.is_empty(), true);
+    /// let map = MapWithDict::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
+    /// assert_eq!(map.is_empty(), false);
+    /// ```
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.keys.is_empty()
     }
 
     /// Checks if the map contains the specified key.
+    ///
+    /// # Examples
+    /// ```
+    /// # use std::collections::HashMap;
+    /// # use entropy_map::MapWithDict;
+    /// let map = MapWithDict::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
+    /// assert_eq!(map.contains_key(&1), true);
+    /// assert_eq!(map.contains_key(&2), false);
+    /// ```
     #[inline]
-    pub fn contains_key(&self, key: &K) -> bool {
+    pub fn contains_key<Q: ?Sized>(&self, key: &Q) -> bool
+    where
+        K: Borrow<Q> + PartialEq<Q>,
+        Q: Hash + Eq,
+    {
         if let Some(idx) = self.mphf.get(key) {
             // SAFETY: `idx` is always within bounds (ensured during construction)
             unsafe { self.keys.get_unchecked(idx) == key }
@@ -129,6 +175,16 @@ where
     }
 
     /// Returns an iterator over the map, yielding key-value pairs.
+    ///
+    /// # Examples
+    /// ```
+    /// # use std::collections::HashMap;
+    /// # use entropy_map::MapWithDict;
+    /// let map = MapWithDict::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
+    /// for (key, val) in map.iter() {
+    ///     println!("key: {key} val: {val}");
+    /// }
+    /// ```
     #[inline]
     pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
         self.keys
@@ -142,12 +198,32 @@ where
     }
 
     /// Returns an iterator over the keys of the map.
+    ///
+    /// # Examples
+    /// ```
+    /// # use std::collections::HashMap;
+    /// # use entropy_map::MapWithDict;
+    /// let map = MapWithDict::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
+    /// for key in map.keys() {
+    ///     println!("{key}");
+    /// }
+    /// ```
     #[inline]
     pub fn keys(&self) -> impl Iterator<Item = &K> {
         self.keys.iter()
     }
 
     /// Returns an iterator over the values of the map.
+    ///
+    /// # Examples
+    /// ```
+    /// # use std::collections::HashMap;
+    /// # use entropy_map::MapWithDict;
+    /// let map = MapWithDict::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
+    /// for val in map.values() {
+    ///     println!("{val}");
+    /// }
+    /// ```
     #[inline]
     pub fn values(&self) -> impl Iterator<Item = &V> {
         self.values_index.iter().map(move |&value_idx| {
@@ -156,7 +232,15 @@ where
         })
     }
 
-    /// Returns the total number of bytes occupied by `MapWithDict`
+    /// Returns the total number of bytes occupied by the structure.
+    ///
+    /// # Examples
+    /// ```
+    /// # use std::collections::HashMap;
+    /// # use entropy_map::MapWithDict;
+    /// let map = MapWithDict::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
+    /// assert_eq!(map.size(), 270);
+    /// ```
     #[inline]
     pub fn size(&self) -> usize {
         size_of_val(self)
@@ -191,9 +275,55 @@ where
     ST: PrimInt + Unsigned + rkyv::Archive<Archived = ST>,
     H: Hasher + Default,
 {
-    /// Retrieves the `Archived` value for a given key using `Archived` MPHF, returning `None` if key is not present.
+    /// Checks if the map contains the specified key.
+    ///
+    /// # Examples
+    /// ```
+    /// # use std::collections::HashMap;
+    /// # use entropy_map::MapWithDict;
+    /// let map = MapWithDict::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
+    /// let archived_map = rkyv::from_bytes::<MapWithDict<u32, u32>>(
+    ///     &rkyv::to_bytes::<_, 1024>(&map).unwrap()
+    /// ).unwrap();
+    /// assert_eq!(archived_map.contains_key(&1), true);
+    /// assert_eq!(archived_map.contains_key(&2), false);
+    /// ```
     #[inline]
-    pub fn get(&self, key: &K) -> Option<&V::Archived> {
+    pub fn contains_key<Q: ?Sized>(&self, key: &Q) -> bool
+    where
+        K: Borrow<Q>,
+        <K as rkyv::Archive>::Archived: PartialEq<Q>,
+        Q: Hash + Eq,
+    {
+        if let Some(idx) = self.mphf.get(key) {
+            // SAFETY: `idx` is always within bounds (ensured during construction)
+            unsafe { self.keys.get_unchecked(idx) == key }
+        } else {
+            false
+        }
+    }
+
+    /// Returns a reference to the value corresponding to the key. Returns `None` if the key is
+    /// not present in the map.
+    ///
+    /// # Examples
+    /// ```
+    /// # use std::collections::HashMap;
+    /// # use entropy_map::MapWithDict;
+    /// let map = MapWithDict::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
+    /// let archived_map = rkyv::from_bytes::<MapWithDict<u32, u32>>(
+    ///     &rkyv::to_bytes::<_, 1024>(&map).unwrap()
+    /// ).unwrap();
+    /// assert_eq!(archived_map.get(&1), Some(&2));
+    /// assert_eq!(archived_map.get(&5), None);
+    /// ```
+    #[inline]
+    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<&V::Archived>
+    where
+        K: Borrow<Q>,
+        <K as rkyv::Archive>::Archived: PartialEq<Q>,
+        Q: Hash + Eq,
+    {
         let idx = self.mphf.get(key)?;
 
         // SAFETY: `idx` is always within bounds (ensured during construction)
@@ -282,6 +412,20 @@ mod tests {
         assert_eq!(map.size(), 16612);
     }
 
+    /// Assert that we can call `.get()` with `K::borrow()`.
+    #[test]
+    fn test_get_borrow() {
+        let original_map = HashMap::from_iter([("a".to_string(), ()), ("b".to_string(), ())]);
+        let map = MapWithDict::try_from(original_map).unwrap();
+
+        assert_eq!(map.get("a"), Some(&()));
+        assert!(map.contains_key("a"));
+        assert_eq!(map.get("b"), Some(&()));
+        assert!(map.contains_key("b"));
+        assert_eq!(map.get("c"), None);
+        assert!(!map.contains_key("c"));
+    }
+
     #[cfg(feature = "rkyv_derive")]
     #[test]
     fn test_rkyv() {
@@ -303,6 +447,22 @@ mod tests {
         for (&k, &v) in rkyv_map.iter() {
             assert_eq!(original_map.get(&k), Some(&v));
         }
+    }
+
+    #[cfg(feature = "rkyv_derive")]
+    #[test]
+    fn test_rkyv_get_borrow() {
+        let original_map = HashMap::from_iter([("a".to_string(), ()), ("b".to_string(), ())]);
+        let map = MapWithDict::try_from(original_map).unwrap();
+        let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&map).unwrap();
+        let rkyv_map = rkyv::check_archived_root::<MapWithDict<String, ()>>(&rkyv_bytes).unwrap();
+
+        assert_eq!(map.get("a"), Some(&()));
+        assert!(rkyv_map.contains_key("a"));
+        assert_eq!(map.get("b"), Some(&()));
+        assert!(rkyv_map.contains_key("b"));
+        assert_eq!(map.get("c"), None);
+        assert!(!rkyv_map.contains_key("c"));
     }
 
     macro_rules! proptest_map_with_dict_model {

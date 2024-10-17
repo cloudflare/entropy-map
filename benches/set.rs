@@ -1,7 +1,7 @@
-use std::{collections::HashSet, default};
 use std::env;
 use std::hash::{BuildHasherDefault, DefaultHasher};
 use std::time::Instant;
+use std::{collections::HashSet, default};
 
 use entropy_map::{Set, DEFAULT_GAMMA};
 
@@ -54,7 +54,8 @@ pub fn benchmark(c: &mut Criterion) {
         });
     });
 
-    let defaulthasher_set: HashSet<u64, BuildHasherDefault<DefaultHasher>> = HashSet::from_iter(original_set.iter().cloned());
+    let defaulthasher_set: HashSet<u64, BuildHasherDefault<DefaultHasher>> =
+        HashSet::from_iter(original_set.iter().cloned());
     group.bench_function("std-contains-defaulthasher", |b| {
         b.iter(|| {
             for key in original_set.iter().take(query_n) {

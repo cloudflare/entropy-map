@@ -12,15 +12,15 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::mem::size_of_val;
 
-use fxhash::FxHasher;
 use num::{PrimInt, Unsigned};
+use wyhash::WyHash;
 
 use crate::mphf::{Mphf, MphfError, DEFAULT_GAMMA};
 
 /// An efficient, immutable hash map with values dictionary-packed for optimized space usage.
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
 #[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
-pub struct MapWithDict<K, V, const B: usize = 32, const S: usize = 8, ST = u8, H = FxHasher>
+pub struct MapWithDict<K, V, const B: usize = 32, const S: usize = 8, ST = u8, H = WyHash>
 where
     ST: PrimInt + Unsigned,
     H: Hasher + Default,
@@ -101,10 +101,10 @@ where
     /// assert_eq!(map.get(&5), None);
     /// ```
     #[inline]
-    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<&V>
+    pub fn get<Q>(&self, key: &Q) -> Option<&V>
     where
         K: Borrow<Q> + PartialEq<Q>,
-        Q: Hash + Eq,
+        Q: Hash + Eq + ?Sized,
     {
         let idx = self.mphf.get(key)?;
 
@@ -161,10 +161,10 @@ where
     /// assert_eq!(map.contains_key(&2), false);
     /// ```
     #[inline]
-    pub fn contains_key<Q: ?Sized>(&self, key: &Q) -> bool
+    pub fn contains_key<Q>(&self, key: &Q) -> bool
     where
         K: Borrow<Q> + PartialEq<Q>,
-        Q: Hash + Eq,
+        Q: Hash + Eq + ?Sized,
     {
         if let Some(idx) = self.mphf.get(key) {
             // SAFETY: `idx` is always within bounds (ensured during construction)
@@ -261,7 +261,7 @@ where
 
     #[inline]
     fn try_from(value: HashMap<K, V>) -> Result<Self, Self::Error> {
-        MapWithDict::from_iter_with_params(value, DEFAULT_GAMMA)
+        MapWithDict::<K, V>::from_iter_with_params(value, DEFAULT_GAMMA)
     }
 }
 
@@ -340,7 +340,7 @@ where
 
     /// Returns an iterator over the archived map, yielding archived key-value pairs.
     #[inline]
-    pub fn iter(&self) -> impl Iterator<Item=(&K::Archived, &V::Archived)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&K::Archived, &V::Archived)> {
         self.keys
             .iter()
             .zip(self.values_index.iter())
@@ -409,7 +409,7 @@ mod tests {
         }
 
         // Test size
-        assert_eq!(map.size(), 16612);
+        assert_eq!(map.size(), 16626);
     }
 
     /// Assert that we can call `.get()` with `K::borrow()`.

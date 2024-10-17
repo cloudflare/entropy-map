@@ -11,8 +11,8 @@ use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::mem::size_of_val;
 
-use fxhash::FxHasher;
 use num::{Integer, PrimInt, Unsigned};
+use wyhash::WyHash;
 
 use crate::mphf::MphfError::*;
 use crate::rank::{RankedBits, RankedBitsAccess};
@@ -23,10 +23,10 @@ use crate::rank::{RankedBits, RankedBitsAccess};
 /// - `B`: group size in bits in [1..64] range, default 32 bits.
 /// - `S`: defines maximum seed value to try (2^S) in [0..16] range, default 8.
 /// - `ST`: seed type (unsigned integer), default `u8`.
-/// - `H`: hasher used to hash keys, default `FxHasher`.
+/// - `H`: hasher used to hash keys, default `WyHash`.
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
 #[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
-pub struct Mphf<const B: usize = 32, const S: usize = 8, ST: PrimInt + Unsigned = u8, H: Hasher + Default = FxHasher> {
+pub struct Mphf<const B: usize = 32, const S: usize = 8, ST: PrimInt + Unsigned = u8, H: Hasher + Default = WyHash> {
     /// Ranked bits for efficient rank queries
     ranked_bits: RankedBits,
     /// Group sizes at each level
@@ -38,7 +38,7 @@ pub struct Mphf<const B: usize = 32, const S: usize = 8, ST: PrimInt + Unsigned 
 }
 
 /// Maximum number of levels to build for MPHF.
-const MAX_LEVELS: usize = 32;
+const MAX_LEVELS: usize = 64;
 
 /// Errors that can occur when initializing `Mphf`.
 #[derive(Debug)]
@@ -377,32 +377,32 @@ mod tests {
 
     // Generate test functions for different combinations of B and S
     generate_tests!(
-        (1, 8, 10000, 100, "bits: 24.58 total_levels: 16 avg_levels: 2.81"),
-        (2, 8, 10000, 100, "bits: 8.91 total_levels: 9 avg_levels: 1.78"),
-        (4, 8, 10000, 100, "bits: 4.29 total_levels: 6 avg_levels: 1.40"),
-        (7, 8, 10000, 100, "bits: 3.02 total_levels: 4 avg_levels: 1.33"),
-        (8, 8, 10000, 100, "bits: 2.71 total_levels: 4 avg_levels: 1.28"),
+        (1, 8, 10000, 100, "bits: 26.64 total_levels: 42 avg_levels: 4.34"),
+        (2, 8, 10000, 100, "bits: 9.00 total_levels: 8 avg_levels: 1.76"),
+        (4, 8, 10000, 100, "bits: 4.39 total_levels: 6 avg_levels: 1.42"),
+        (7, 8, 10000, 100, "bits: 3.12 total_levels: 4 avg_levels: 1.39"),
+        (8, 8, 10000, 100, "bits: 2.80 total_levels: 6 avg_levels: 1.34"),
         (15, 8, 10000, 100, "bits: 2.50 total_levels: 4 avg_levels: 1.50"),
-        (16, 8, 10000, 100, "bits: 2.28 total_levels: 6 avg_levels: 1.42"),
-        (23, 8, 10000, 100, "bits: 2.32 total_levels: 3 avg_levels: 1.45"),
-        (24, 8, 10000, 100, "bits: 2.25 total_levels: 6 avg_levels: 1.59"),
+        (16, 8, 10000, 100, "bits: 2.30 total_levels: 6 avg_levels: 1.43"),
+        (23, 8, 10000, 100, "bits: 2.53 total_levels: 4 avg_levels: 1.67"),
+        (24, 8, 10000, 100, "bits: 2.25 total_levels: 6 avg_levels: 1.57"),
         (31, 8, 10000, 100, "bits: 2.40 total_levels: 3 avg_levels: 1.44"),
-        (32, 8, 10000, 100, "bits: 2.19 total_levels: 7 avg_levels: 1.62"),
+        (32, 8, 10000, 100, "bits: 2.20 total_levels: 7 avg_levels: 1.63"),
         (33, 8, 10000, 100, "bits: 2.52 total_levels: 4 avg_levels: 1.78"),
         (48, 8, 10000, 100, "bits: 2.25 total_levels: 7 avg_levels: 1.78"),
-        (53, 8, 10000, 100, "bits: 2.49 total_levels: 3 avg_levels: 1.67"),
+        (53, 8, 10000, 100, "bits: 2.90 total_levels: 4 avg_levels: 2.00"),
         (61, 8, 10000, 100, "bits: 2.82 total_levels: 4 avg_levels: 2.00"),
         (63, 8, 10000, 100, "bits: 2.89 total_levels: 4 avg_levels: 2.00"),
         (64, 8, 10000, 100, "bits: 2.25 total_levels: 8 avg_levels: 1.84"),
-        (32, 7, 10000, 100, "bits: 2.28 total_levels: 7 avg_levels: 1.68"),
-        (32, 5, 10000, 100, "bits: 2.45 total_levels: 8 avg_levels: 1.81"),
-        (32, 4, 10000, 100, "bits: 2.56 total_levels: 9 avg_levels: 1.92"),
-        (32, 3, 10000, 100, "bits: 2.72 total_levels: 10 avg_levels: 2.04"),
-        (32, 1, 10000, 100, "bits: 3.18 total_levels: 12 avg_levels: 2.39"),
-        (32, 0, 10000, 100, "bits: 3.64 total_levels: 14 avg_levels: 2.72"),
-        (32, 8, 100000, 100, "bits: 2.10 total_levels: 9 avg_levels: 1.63"),
-        (32, 8, 100000, 200, "bits: 2.71 total_levels: 4 avg_levels: 1.05"),
-        (32, 6, 100000, 200, "bits: 2.82 total_levels: 4 avg_levels: 1.10"),
+        (32, 7, 10000, 100, "bits: 2.29 total_levels: 7 avg_levels: 1.70"),
+        (32, 5, 10000, 100, "bits: 2.47 total_levels: 8 avg_levels: 1.84"),
+        (32, 4, 10000, 100, "bits: 2.58 total_levels: 9 avg_levels: 1.92"),
+        (32, 3, 10000, 100, "bits: 2.75 total_levels: 10 avg_levels: 2.05"),
+        (32, 1, 10000, 100, "bits: 3.22 total_levels: 11 avg_levels: 2.39"),
+        (32, 0, 10000, 100, "bits: 3.65 total_levels: 14 avg_levels: 2.73"),
+        (32, 8, 100000, 100, "bits: 2.11 total_levels: 10 avg_levels: 1.64"),
+        (32, 8, 100000, 200, "bits: 2.73 total_levels: 4 avg_levels: 1.06"),
+        (32, 6, 100000, 200, "bits: 2.84 total_levels: 5 avg_levels: 1.11"),
     );
 
     #[cfg(feature = "rkyv_derive")]

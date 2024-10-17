@@ -15,15 +15,15 @@ use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::mem::size_of_val;
 
-use fxhash::FxHasher;
 use num::{PrimInt, Unsigned};
+use wyhash::WyHash;
 
 use crate::mphf::{Mphf, MphfError, DEFAULT_GAMMA};
 
 /// An efficient, immutable set.
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
 #[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
-pub struct Set<K, const B: usize = 32, const S: usize = 8, ST = u8, H = FxHasher>
+pub struct Set<K, const B: usize = 32, const S: usize = 8, ST = u8, H = WyHash>
 where
     ST: PrimInt + Unsigned,
     H: Hasher + Default,
@@ -82,10 +82,10 @@ where
     /// assert_eq!(set.contains(&4), false);
     /// ```
     #[inline]
-    pub fn contains<Q: ?Sized>(&self, key: &Q) -> bool
+    pub fn contains<Q>(&self, key: &Q) -> bool
     where
         K: Borrow<Q> + PartialEq<Q>,
-        Q: Hash + Eq,
+        Q: Hash + Eq + ?Sized,
     {
         // SAFETY: `idx` is always within array bounds (ensured during construction)
         self.mphf

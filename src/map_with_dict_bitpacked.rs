@@ -17,15 +17,15 @@ use std::hash::{Hash, Hasher};
 use std::mem::size_of_val;
 
 use bitpacking::{BitPacker, BitPacker1x};
-use fxhash::FxHasher;
 use num::{PrimInt, Unsigned};
+use wyhash::WyHash;
 
 use crate::mphf::{Mphf, DEFAULT_GAMMA};
 
 /// An efficient, immutable hash map with bit-packed `Vec<u32>` values for optimized space usage.
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
 #[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
-pub struct MapWithDictBitpacked<K, const B: usize = 32, const S: usize = 8, ST = u8, H = FxHasher>
+pub struct MapWithDictBitpacked<K, const B: usize = 32, const S: usize = 8, ST = u8, H = WyHash>
 where
     ST: PrimInt + Unsigned,
     H: Hasher + Default,
@@ -128,10 +128,10 @@ where
     /// assert_eq!(map.get_values(&2, &mut values), false);
     /// ```
     #[inline]
-    pub fn get_values<Q: ?Sized>(&self, key: &Q, values: &mut [u32]) -> bool
+    pub fn get_values<Q>(&self, key: &Q, values: &mut [u32]) -> bool
     where
         K: Borrow<Q> + PartialEq<Q>,
-        Q: Hash + Eq,
+        Q: Hash + Eq + ?Sized,
     {
         let idx = match self.mphf.get(key) {
             Some(idx) => idx,
@@ -194,10 +194,10 @@ where
     /// assert_eq!(map.contains_key(&2), false);
     /// ```
     #[inline]
-    pub fn contains_key<Q: ?Sized>(&self, key: &Q) -> bool
+    pub fn contains_key<Q>(&self, key: &Q) -> bool
     where
         K: Borrow<Q> + PartialEq<Q>,
-        Q: Hash + Eq,
+        Q: Hash + Eq + ?Sized,
     {
         if let Some(idx) = self.mphf.get(key) {
             // SAFETY: `idx` is always within bounds (ensured during construction)

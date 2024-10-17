@@ -20,6 +20,7 @@ Check out the provided examples for detailed usage:
 * [mphf](examples/mphf.rs)
 * [map_with_dict](examples/map_with_dict.rs)
 * [map_with_dict_bitpacked](examples/map_with_dict_bitpacked.rs)
+* [set](examples/set.rs)
 
 ## Overview
 This crate provides advanced data structures leveraging MPHF, optimized for scenarios requiring high-speed data access and minimal memory usage.
@@ -35,7 +36,7 @@ It includes the following key components:
   - `B`: group size in bits in [1..64] range, default 32 bits.
   - `S`: defines maximum seed value to try (2^S) in [0..16] range, default 8.
   - `ST`: seed type (unsigned integer), default `u8`.
-  - `H`: hasher used to hash keys, default `FxHasher`.
+  - `H`: hasher used to hash keys, default `WyHash`.
 - Configurable `gamma` parameter to tune construction time vs query time trade-off.
 - Optional [rkyv](https://rkyv.org/) support to enable zero-copy serialization/deserialization of MPHF.
 
@@ -55,4 +56,4 @@ It includes the following key components:
 Special case of `MapWithDict`, optimized for set membership operations.
 - Immutable set using MPHF for indexing.
 - Stores keys to ensure presence/absence of the key in the set.
-- Optional rkyv support to neable zero-copy serialization/deserialization.
+- Optional rkyv support to enable zero-copy serialization/deserialization.

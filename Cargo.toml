@@ -2,7 +2,10 @@
 name = "entropy-map"
 version = "0.1.0"
 edition = "2021"
-authors = ["Alex Bocharov <bocharov.alexandr@gmail.com>"]
+authors = [
+    "Alex Bocharov <bocharov.alexandr@gmail.com>",
+    "Austin Hartzheim <inbox@austinhartzheim.me>"
+]
 description = "Ultra-low latency hash map using minimal perfect hash functions and compact encoding of values, minimizing memory footprint and storage size for efficient data retrieval."
 documentation = "https://docs.rs/entropy-map"
 license = "Apache-2.0"
@@ -14,19 +17,19 @@ categories = ["algorithms", "data-structures"]
 [dependencies]
 bitpacking = "0.9.2"
 bytecheck = { version = "~0.6.8", default-features = false, optional = true }
-fxhash = "0.2.1"
 num = "0.4.1"
 rkyv = { version = "0.7.42", features = ["validation", "strict"], optional = true }
+wyhash = "0.5.0"
 
 [dev-dependencies]
 bitvec = "1.0.1"
 criterion = { version = "0.5.1", features = ["html_reports"] }
 paste = "1.0.14"
+proptest = "1.4.0"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
-test-case = "3.3.1"
 rkyv = { version = "0.7.42", features = ["validation", "strict"] }
-proptest = "1.4.0"
+test-case = "3.3.1"
 
 [features]
 default = []

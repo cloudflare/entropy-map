@@ -1,6 +1,6 @@
 [package]
 name = "entropy-map"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 authors = [
     "Alex Bocharov <bocharov.alexandr@gmail.com>",
@@ -11,7 +11,7 @@ documentation = "https://docs.rs/entropy-map"
 license = "Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/cloudflare/entropy-map"
-keywords = ["entropy", "map", "hashing", "minimal", "perfect"]
+keywords = ["map", "hashing", "minimal", "perfect", "mphf"]
 categories = ["algorithms", "data-structures"]
 
 [dependencies]

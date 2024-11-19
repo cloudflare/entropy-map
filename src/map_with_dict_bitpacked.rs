@@ -23,6 +23,7 @@ use wyhash::WyHash;
 use crate::mphf::{Mphf, DEFAULT_GAMMA};
 
 /// An efficient, immutable hash map with bit-packed `Vec<u32>` values for optimized space usage.
+#[derive(Default)]
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
 #[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
 pub struct MapWithDictBitpacked<K, const B: usize = 32, const S: usize = 8, ST = u8, H = WyHash>

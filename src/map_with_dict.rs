@@ -265,6 +265,17 @@ where
     }
 }
 
+impl<K, V> Default for MapWithDict<K, V>
+where
+    K: Eq + Hash + Clone,
+    V: Eq + Clone + Hash,
+{
+    fn default() -> Self {
+        // This will never panic when constructing from an empty HashMap
+        Self::try_from(HashMap::default()).unwrap()
+    }
+}
+
 /// Implement `get` for `Archived` version of `MapWithDict` if feature is enabled
 #[cfg(feature = "rkyv_derive")]
 impl<K, V, const B: usize, const S: usize, ST, H> ArchivedMapWithDict<K, V, B, S, ST, H>
@@ -375,6 +386,10 @@ mod tests {
 
     #[test]
     fn test_map_with_dict() {
+        // Create an empty default map
+        let map: MapWithDict<usize, usize> = Default::default();
+        assert!(map.is_empty());
+
         // Collect original key-value pairs directly into a HashMap
         let original_map = gen_map(1000);
 

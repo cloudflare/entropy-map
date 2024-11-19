@@ -298,6 +298,16 @@ where
     }
 }
 
+impl<K> Default for MapWithDictBitpacked<K>
+where
+    K: PartialEq + Hash + Clone,
+{
+    fn default() -> Self {
+        // This will never panic when constructing from an empty HashMap
+        Self::try_from(HashMap::default()).unwrap()
+    }
+}
+
 /// Number of values bit-packed in one batch
 const VALUES_BLOCK_LEN: usize = BitPacker1x::BLOCK_LEN;
 
@@ -496,6 +506,10 @@ mod tests {
 
     #[test]
     fn test_map_with_dict_bitpacked() {
+        // Create an empty default map
+        let map: MapWithDictBitpacked<usize> = Default::default();
+        assert!(map.is_empty());
+
         let items_num = 1000;
         let values_num = 10;
         let original_map = gen_map(items_num, values_num);

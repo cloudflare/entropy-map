@@ -168,6 +168,16 @@ where
     }
 }
 
+impl<K> Default for Set<K>
+where
+    K: Eq + Hash,
+{
+    fn default() -> Self {
+        // This will never panic when constructing from an empty HashSet
+        Self::try_from(HashSet::default()).unwrap()
+    }
+}
+
 /// Implement `contains` for `Archived` version of `Set` if feature is enabled
 #[cfg(feature = "rkyv_derive")]
 impl<K, const B: usize, const S: usize, ST, H> ArchivedSet<K, B, S, ST, H>
@@ -221,6 +231,10 @@ mod tests {
 
     #[test]
     fn test_set_with_hashset() {
+        // Create an empty default set
+        let set: Set<usize> = Default::default();
+        assert!(set.is_empty());
+
         // Collect original key-value pairs directly into a HashSet
         let original_set = gen_set(1000);
 

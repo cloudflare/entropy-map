@@ -1,14 +1,13 @@
+use std::collections::HashSet;
 use std::env;
 use std::hash::{BuildHasherDefault, DefaultHasher};
 use std::time::Instant;
-use std::{collections::HashSet, default};
 
 use entropy_map::{Set, DEFAULT_GAMMA};
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use rkyv::collections;
 
 pub fn benchmark(c: &mut Criterion) {
     let n: usize = env::var("N").unwrap_or("1000000".to_string()).parse().unwrap();
@@ -21,7 +20,9 @@ pub fn benchmark(c: &mut Criterion) {
     println!("set generation took: {:?}", t0.elapsed());
 
     let t0 = Instant::now();
-    let set = Set::try_from(original_set.clone()).expect("failed to build set");
+    let set =
+        Set::<u64, 32, 8, u8, rustc_hash::FxHasher>::from_iter_with_params(original_set.iter().cloned(), DEFAULT_GAMMA)
+            .expect("failed to build set");
     println!("set construction took: {:?}", t0.elapsed());
 
     let mut group = c.benchmark_group("set");
@@ -45,7 +46,7 @@ pub fn benchmark(c: &mut Criterion) {
         });
     });
 
-    let fxhash_set: HashSet<u64, fxhash::FxBuildHasher> = HashSet::from_iter(original_set.iter().cloned());
+    let fxhash_set: HashSet<u64, rustc_hash::FxBuildHasher> = HashSet::from_iter(original_set.iter().cloned());
     group.bench_function("std-contains-fxhash", |b| {
         b.iter(|| {
             for key in original_set.iter().take(query_n) {

@@ -29,6 +29,7 @@ proptest = "1.4.0"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
 rkyv = { version = "0.7.42", features = ["validation", "strict"] }
+rustc-hash = "2"
 test-case = "3.3.1"
 
 [features]

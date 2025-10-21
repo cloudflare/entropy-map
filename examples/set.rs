@@ -19,8 +19,10 @@ fn main() {
 
     #[cfg(feature = "rkyv_derive")]
     {
-        let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&set).unwrap();
-        let rkyv = rkyv::check_archived_root::<Set<u64>>(&rkyv_bytes).unwrap();
+        use entropy_map::ArchivedSet;
+
+        let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&set).unwrap();
+        let rkyv = rkyv::access::<ArchivedSet<u64>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
 
         assert!(rkyv.contains(&1));
         assert!(rkyv.contains(&2));

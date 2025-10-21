@@ -3,7 +3,7 @@ use std::env;
 use std::hint::black_box;
 use std::time::Instant;
 
-use entropy_map::MapWithDictBitpacked;
+use entropy_map::{ArchivedMapWithDictBitpacked, MapWithDictBitpacked};
 
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rand::{Rng, SeedableRng};
@@ -55,10 +55,10 @@ pub fn benchmark(c: &mut Criterion) {
     });
 
     let t0 = Instant::now();
-    let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&map).unwrap();
+    let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&map).unwrap();
     println!("map_with_dict_bitpacked rkyv serialization took: {:?}", t0.elapsed());
 
-    let rkyv_map = rkyv::check_archived_root::<MapWithDictBitpacked<u64>>(&rkyv_bytes).unwrap();
+    let rkyv_map = rkyv::access::<ArchivedMapWithDictBitpacked<u64>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
 
     group.bench_function("get-rkyv", |b| {
         b.iter(|| {

@@ -20,7 +20,6 @@ use crate::mphf::{Mphf, MphfError, DEFAULT_GAMMA};
 /// An efficient, immutable hash map with values dictionary-packed for optimized space usage.
 #[derive(Default)]
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
-#[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
 pub struct MapWithDict<K, V, const B: usize = 32, const S: usize = 8, ST = u8, H = WyHash>
 where
     ST: PrimInt + Unsigned,
@@ -82,7 +81,7 @@ where
             }
         }
 
-        Ok(MapWithDict {
+        Ok(Self {
             mphf,
             keys: keys.into_boxed_slice(),
             values_index: values_index.into_boxed_slice(),
@@ -262,7 +261,7 @@ where
 
     #[inline]
     fn try_from(value: HashMap<K, V>) -> Result<Self, Self::Error> {
-        MapWithDict::<K, V>::from_iter_with_params(value, DEFAULT_GAMMA)
+        Self::from_iter_with_params(value, DEFAULT_GAMMA)
     }
 }
 
@@ -281,11 +280,11 @@ where
     /// # Examples
     /// ```
     /// # use std::collections::HashMap;
+    /// # use entropy_map::ArchivedMapWithDict;
     /// # use entropy_map::MapWithDict;
     /// let map = MapWithDict::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
-    /// let archived_map = rkyv::from_bytes::<MapWithDict<u32, u32>>(
-    ///     &rkyv::to_bytes::<_, 1024>(&map).unwrap()
-    /// ).unwrap();
+    /// let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&map).unwrap();
+    /// let archived_map = rkyv::access::<ArchivedMapWithDict<u32, u32>, rkyv::rancor::Error>(&bytes).unwrap();
     /// assert_eq!(archived_map.contains_key(&1), true);
     /// assert_eq!(archived_map.contains_key(&2), false);
     /// ```
@@ -310,13 +309,13 @@ where
     /// # Examples
     /// ```
     /// # use std::collections::HashMap;
+    /// # use entropy_map::ArchivedMapWithDict;
     /// # use entropy_map::MapWithDict;
     /// let map = MapWithDict::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
-    /// let archived_map = rkyv::from_bytes::<MapWithDict<u32, u32>>(
-    ///     &rkyv::to_bytes::<_, 1024>(&map).unwrap()
-    /// ).unwrap();
-    /// assert_eq!(archived_map.get(&1), Some(&2));
-    /// assert_eq!(archived_map.get(&5), None);
+    /// let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&map).unwrap();
+    /// let archived_map = rkyv::access::<ArchivedMapWithDict<u32, u32>, rkyv::rancor::Error>(&bytes).unwrap();
+    /// assert_eq!(archived_map.get(&1).map(|v| v.to_native()), Some(2));
+    /// assert_eq!(archived_map.get(&5).map(|v| v.to_native()), None);
     /// ```
     #[inline]
     pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<&V::Archived>
@@ -331,7 +330,7 @@ where
         unsafe {
             if self.keys.get_unchecked(idx) == key {
                 // SAFETY: `idx` and `value_idx` are always within bounds (ensure during construction)
-                let value_idx = *self.values_index.get_unchecked(idx) as usize;
+                let value_idx = self.values_index.get_unchecked(idx).to_native() as usize;
                 Some(self.values_dict.get_unchecked(value_idx))
             } else {
                 None
@@ -347,7 +346,7 @@ where
             .zip(self.values_index.iter())
             .map(move |(key, &value_idx)| {
                 // SAFETY: `value_idx` is always within bounds (ensured during construction)
-                let value = unsafe { self.values_dict.get_unchecked(value_idx as usize) };
+                let value = unsafe { self.values_dict.get_unchecked(value_idx.to_native() as usize) };
                 (key, value)
             })
     }
@@ -433,11 +432,11 @@ mod tests {
         // create regular `HashMap`, then `MapWithDict`, then serialize to `rkyv` bytes.
         let original_map = gen_map(1000);
         let map = MapWithDict::try_from(original_map.clone()).unwrap();
-        let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&map).unwrap();
+        let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&map).unwrap();
 
-        assert_eq!(rkyv_bytes.len(), 12464);
+        assert_eq!(rkyv_bytes.len(), 12480);
 
-        let rkyv_map = rkyv::check_archived_root::<MapWithDict<u64, u32>>(&rkyv_bytes).unwrap();
+        let rkyv_map = rkyv::access::<ArchivedMapWithDict<u64, u32>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
 
         // Test get on `Archived` version
         for (k, v) in original_map.iter() {
@@ -445,8 +444,8 @@ mod tests {
         }
 
         // Test iter on `Archived` version
-        for (&k, &v) in rkyv_map.iter() {
-            assert_eq!(original_map.get(&k), Some(&v));
+        for (k, v) in rkyv_map.iter() {
+            assert_eq!(original_map.get(&k.to_native()), Some(&v.to_native()));
         }
     }
 
@@ -455,8 +454,8 @@ mod tests {
     fn test_rkyv_get_borrow() {
         let original_map = HashMap::from_iter([("a".to_string(), ()), ("b".to_string(), ())]);
         let map = MapWithDict::try_from(original_map).unwrap();
-        let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&map).unwrap();
-        let rkyv_map = rkyv::check_archived_root::<MapWithDict<String, ()>>(&rkyv_bytes).unwrap();
+        let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&map).unwrap();
+        let rkyv_map = rkyv::access::<ArchivedMapWithDict<String, ()>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
 
         assert_eq!(map.get("a"), Some(&()));
         assert!(rkyv_map.contains_key("a"));

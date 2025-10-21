@@ -25,7 +25,6 @@ use crate::mphf::{Mphf, DEFAULT_GAMMA};
 /// An efficient, immutable hash map with bit-packed `Vec<u32>` values for optimized space usage.
 #[derive(Default)]
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
-#[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
 pub struct MapWithDictBitpacked<K, const B: usize = 32, const S: usize = 8, ST = u8, H = WyHash>
 where
     ST: PrimInt + Unsigned,
@@ -363,11 +362,11 @@ where
     /// # Examples
     /// ```
     /// # use std::collections::HashMap;
+    /// # use entropy_map::ArchivedMapWithDictBitpacked;
     /// # use entropy_map::MapWithDictBitpacked;
     /// let map = MapWithDictBitpacked::try_from(HashMap::from([(1, vec![2]), (3, vec![4])])).unwrap();
-    /// let archived_map = rkyv::from_bytes::<MapWithDictBitpacked<u32>>(
-    ///     &rkyv::to_bytes::<_, 1024>(&map).unwrap()
-    /// ).unwrap();
+    /// let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&map).unwrap();
+    /// let archived_map = rkyv::access::<ArchivedMapWithDictBitpacked<u32>, rkyv::rancor::Error>(&bytes).unwrap();
     /// let mut values = [0];
     /// assert_eq!(archived_map.get_values(&1, &mut values), true);
     /// assert_eq!(values, [2]);
@@ -387,7 +386,7 @@ where
             }
 
             // SAFETY: `idx` and `value_idx` are always within bounds (ensure during construction)
-            let value_idx = *self.values_index.get_unchecked(idx) as usize;
+            let value_idx = self.values_index.get_unchecked(idx).to_native() as usize;
             let dict = self.values_dict.get_unchecked(value_idx..);
             unpack_values(dict, values);
         }
@@ -544,11 +543,11 @@ mod tests {
         let values_num = 10;
         let original_map = gen_map(items_num, values_num);
         let map = MapWithDictBitpacked::try_from(original_map.clone()).unwrap();
-        let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&map).unwrap();
+        let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&map).unwrap();
 
         assert_eq!(rkyv_bytes.len(), 18516);
 
-        let rkyv_map = rkyv::check_archived_root::<MapWithDictBitpacked<u64>>(&rkyv_bytes).unwrap();
+        let rkyv_map = rkyv::access::<ArchivedMapWithDictBitpacked<u64>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
 
         // Test get_values on `Archived` version of `MapWithDictBitpacked`
         let mut values_buf = vec![0; values_num];

@@ -26,7 +26,6 @@ use crate::rank::{RankedBits, RankedBitsAccess};
 /// - `H`: hasher used to hash keys, default `WyHash`.
 #[derive(Default)]
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
-#[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
 pub struct Mphf<const B: usize = 32, const S: usize = 8, ST: PrimInt + Unsigned = u8, H: Hasher + Default = WyHash> {
     /// Ranked bits for efficient rank queries
     ranked_bits: RankedBits,
@@ -69,6 +68,11 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
 
     /// Initializes `Mphf` using slice of `keys` and parameter `gamma`.
     pub fn from_slice<K: Hash>(keys: &[K], gamma: f32) -> Result<Self, MphfError> {
+        Self::from_iter(keys.iter(), gamma)
+    }
+
+    /// Initializes `Mphf` using iter of `keys` and parameter `gamma`.
+    pub fn from_iter<'k, K: Hash + 'k>(keys_iter: impl Iterator<Item = &'k K>, gamma: f32) -> Result<Self, MphfError> {
         if gamma < 1.0 {
             return Err(InvalidGammaParameter);
         }
@@ -77,7 +81,7 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
             return Err(InvalidSeedType);
         }
 
-        let mut hashes: Vec<u64> = keys.iter().map(|key| hash_key::<H, _>(key)).collect();
+        let mut hashes: Vec<u64> = keys_iter.map(|key| hash_key::<H, _>(key)).collect();
         let mut group_bits = vec![];
         let mut group_seeds = vec![];
         let mut level_groups = vec![];
@@ -95,7 +99,7 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
             }
         }
 
-        Ok(Mphf {
+        Ok(Self {
             ranked_bits: RankedBits::new(group_bits.into_boxed_slice()),
             level_groups: level_groups.into_boxed_slice(),
             group_seeds: group_seeds.into_boxed_slice(),
@@ -236,7 +240,7 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
     /// If `key` was not in the initial collection, returns `None` or an arbitrary value from the range.
     #[inline]
     pub fn get<K: Hash + ?Sized>(&self, key: &K) -> Option<usize> {
-        Self::get_impl(key, &self.level_groups, &self.group_seeds, &self.ranked_bits)
+        Self::get_impl(key, self.level_groups.iter().copied(), &self.group_seeds, &self.ranked_bits)
     }
 
     /// Inner implementation of `get` with `level_groups`, `group_seeds` and `ranked_bits` passed
@@ -244,12 +248,12 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
     #[inline]
     fn get_impl<K: Hash + ?Sized>(
         key: &K,
-        level_groups: &[u32],
+        level_groups: impl Iterator<Item = u32>,
         group_seeds: &[ST],
         ranked_bits: &impl RankedBitsAccess,
     ) -> Option<usize> {
         let mut groups_before = 0;
-        for (level, &groups) in level_groups.iter().enumerate() {
+        for (level, groups) in level_groups.enumerate() {
             let level_hash = hash_with_seed(hash_key::<H, _>(key), level as u32);
             let group_idx = groups_before + fastmod32(level_hash as u32, groups);
             // SAFETY: `group_idx` is always within bounds (ensured during calculation)
@@ -318,7 +322,7 @@ where
 {
     #[inline]
     pub fn get<K: Hash + ?Sized>(&self, key: &K) -> Option<usize> {
-        Mphf::<B, S, ST, H>::get_impl(key, &self.level_groups, &self.group_seeds, &self.ranked_bits)
+        Mphf::<B, S, ST, H>::get_impl(key, self.level_groups.iter().map(|v| v.to_native()), &self.group_seeds, &self.ranked_bits)
     }
 }
 
@@ -412,11 +416,11 @@ mod tests {
         let n = 10000;
         let keys = (0..n as u64).collect::<Vec<u64>>();
         let mphf = Mphf::<32, 4>::from_slice(&keys, DEFAULT_GAMMA).expect("failed to create mphf");
-        let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&mphf).unwrap();
+        let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&mphf).unwrap();
 
-        assert_eq!(rkyv_bytes.len(), 3804);
+        assert_eq!(rkyv_bytes.len(), 3884);
 
-        let rkyv_mphf = rkyv::check_archived_root::<Mphf<32, 4>>(&rkyv_bytes).unwrap();
+        let rkyv_mphf = rkyv::access::<ArchivedMphf<32, 4>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
 
         // Ensure that all keys are assigned unique index which is less than `n`
         let mut set = HashSet::with_capacity(n);

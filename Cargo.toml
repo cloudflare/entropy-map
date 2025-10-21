@@ -18,7 +18,7 @@ categories = ["algorithms", "data-structures"]
 bitpacking = "0.9.2"
 bytecheck = { version = "~0.6.8", default-features = false, optional = true }
 num = "0.4.1"
-rkyv = { version = "0.7.42", features = ["validation", "strict"], optional = true }
+rkyv = { version = "0.8", optional = true }
 wyhash = "0.6"
 
 [dev-dependencies]
@@ -28,7 +28,7 @@ paste = "1.0.14"
 proptest = "1.4.0"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
-rkyv = { version = "0.7.42", features = ["validation", "strict"] }
+rkyv = { version = "0.8" }
 rustc-hash = "2"
 test-case = "3.3.1"
 

@@ -56,7 +56,6 @@ pub trait RankedBitsAccess {
 
 #[derive(Debug, Default)]
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
-#[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
 pub struct RankedBits {
     /// The bit vector represented as an array of u64 integers.
     bits: Box<[u64]>,
@@ -70,7 +69,6 @@ pub struct RankedBits {
 /// See https://github.com/rkyv/rkyv/issues/409 for more details.
 #[derive(Debug)]
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
-#[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
 pub struct L12Rank([u8; 16]);
 
 /// Trait used to access archived and non-archived L1 and L2 ranks
@@ -163,7 +161,8 @@ impl RankedBitsAccess for RankedBits {
 impl RankedBitsAccess for ArchivedRankedBits {
     #[inline]
     fn rank(&self, idx: usize) -> Option<usize> {
-        unsafe { Self::rank_impl(&self.bits, &self.l12_ranks, idx) }
+        // transmute?
+        unsafe { Self::rank_impl(std::mem::transmute(self.bits.get()), &self.l12_ranks, idx) }
     }
 }
 

@@ -2,7 +2,7 @@ use std::env;
 use std::hint::black_box;
 use std::time::Instant;
 
-use entropy_map::Mphf;
+use entropy_map::{ArchivedMphf, Mphf};
 
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rand::random;
@@ -61,10 +61,10 @@ pub fn benchmark(c: &mut Criterion) {
         });
 
         let t0 = Instant::now();
-        let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&mphf).unwrap();
+        let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&mphf).unwrap();
         println!("mphf ({:.1}) rkyv serialization took: {:?}", gamma, t0.elapsed());
 
-        let rkyv_mphf = rkyv::check_archived_root::<Mphf<32, 8>>(&rkyv_bytes).unwrap();
+        let rkyv_mphf = rkyv::access::<ArchivedMphf<32, 8>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
 
         group.bench_function(format!("rkyv-mphf-get/gamma-{:.1}", gamma), |b| {
             b.iter(|| {

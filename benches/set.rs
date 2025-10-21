@@ -1,11 +1,12 @@
 use std::collections::HashSet;
 use std::env;
 use std::hash::{BuildHasherDefault, DefaultHasher};
+use std::hint::black_box;
 use std::time::Instant;
 
 use entropy_map::{Set, DEFAULT_GAMMA};
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 

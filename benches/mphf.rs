@@ -1,9 +1,10 @@
 use std::env;
+use std::hint::black_box;
 use std::time::Instant;
 
 use entropy_map::Mphf;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rand::random;
 
 /// # Benchmark results for N = 1M:

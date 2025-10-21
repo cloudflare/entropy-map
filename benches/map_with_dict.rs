@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 use std::env;
+use std::hint::black_box;
 use std::time::Instant;
 
 use entropy_map::MapWithDict;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 

@@ -19,11 +19,11 @@ bitpacking = "0.9.2"
 bytecheck = { version = "~0.6.8", default-features = false, optional = true }
 num = "0.4.1"
 rkyv = { version = "0.7.42", features = ["validation", "strict"], optional = true }
-wyhash = "0.5.0"
+wyhash = "0.6"
 
 [dev-dependencies]
 bitvec = "1.0.1"
-criterion = { version = "0.5.1", features = ["html_reports"] }
+criterion = { version = "0.7", features = ["html_reports"] }
 paste = "1.0.14"
 proptest = "1.4.0"
 rand = "0.8.5"

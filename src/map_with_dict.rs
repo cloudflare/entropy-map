@@ -7,10 +7,12 @@
 //! the values dictionary. Keys are stored to ensure that `get` operation will return `None` if key
 //! wasn't present in original set.
 
-use std::borrow::Borrow;
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
-use std::mem::size_of_val;
+use std::{
+    borrow::Borrow,
+    collections::HashMap,
+    hash::{Hash, Hasher},
+    mem::size_of_val,
+};
 
 use num::{PrimInt, Unsigned};
 use wyhash::WyHash;

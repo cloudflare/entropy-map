@@ -11,10 +11,12 @@
 //! stored in the byte dictionary. Keys are maintained for validation during retrieval. A `get`
 //! query for a non-existent key at construction returns `false`, similar to `MapWithDict`.
 
-use std::borrow::Borrow;
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
-use std::mem::size_of_val;
+use std::{
+    borrow::Borrow,
+    collections::HashMap,
+    hash::{Hash, Hasher},
+    mem::size_of_val,
+};
 
 use bitpacking::{BitPacker, BitPacker1x};
 use num::{PrimInt, Unsigned};

@@ -1,7 +1,4 @@
-use std::collections::HashMap;
-use std::env;
-use std::hint::black_box;
-use std::time::Instant;
+use std::{collections::HashMap, env, hint::black_box, time::Instant};
 
 use entropy_map::{ArchivedMapWithDictBitpacked, MapWithDictBitpacked};
 

@@ -1,8 +1,10 @@
-use std::collections::HashSet;
-use std::env;
-use std::hash::{BuildHasherDefault, DefaultHasher};
-use std::hint::black_box;
-use std::time::Instant;
+use std::{
+    collections::HashSet,
+    env,
+    hash::{BuildHasherDefault, DefaultHasher},
+    hint::black_box,
+    time::Instant,
+};
 
 use entropy_map::{Set, DEFAULT_GAMMA};
 

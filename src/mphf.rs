@@ -7,15 +7,19 @@
 //! but prioritizes code simplicity and portability, with a special focus on optimizing the rank
 //! storage mechanism and reducing the construction time and querying latency of MPHF.
 
-use std::hash::{Hash, Hasher};
-use std::marker::PhantomData;
-use std::mem::size_of_val;
+use std::{
+    hash::{Hash, Hasher},
+    marker::PhantomData,
+    mem::size_of_val,
+};
 
 use num::{Integer, PrimInt, Unsigned};
 use wyhash::WyHash;
 
-use crate::mphf::MphfError::*;
-use crate::rank::{RankedBits, RankedBitsAccess};
+use crate::{
+    mphf::MphfError::*,
+    rank::{RankedBits, RankedBitsAccess},
+};
 
 /// A Minimal Perfect Hash Function (MPHF).
 ///
@@ -240,7 +244,12 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
     /// If `key` was not in the initial collection, returns `None` or an arbitrary value from the range.
     #[inline]
     pub fn get<K: Hash + ?Sized>(&self, key: &K) -> Option<usize> {
-        Self::get_impl(key, self.level_groups.iter().copied(), &self.group_seeds, &self.ranked_bits)
+        Self::get_impl(
+            key,
+            self.level_groups.iter().copied(),
+            &self.group_seeds,
+            &self.ranked_bits,
+        )
     }
 
     /// Inner implementation of `get` with `level_groups`, `group_seeds` and `ranked_bits` passed
@@ -322,7 +331,12 @@ where
 {
     #[inline]
     pub fn get<K: Hash + ?Sized>(&self, key: &K) -> Option<usize> {
-        Mphf::<B, S, ST, H>::get_impl(key, self.level_groups.iter().map(|v| v.to_native()), &self.group_seeds, &self.ranked_bits)
+        Mphf::<B, S, ST, H>::get_impl(
+            key,
+            self.level_groups.iter().map(|v| v.to_native()),
+            &self.group_seeds,
+            &self.ranked_bits,
+        )
     }
 }
 

@@ -169,10 +169,8 @@ impl RankedBitsAccess for ArchivedRankedBits {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitvec::order::Lsb0;
-    use bitvec::vec::BitVec;
-    use rand::distributions::Standard;
-    use rand::Rng;
+    use bitvec::{order::Lsb0, vec::BitVec};
+    use rand::{distributions::Standard, Rng};
 
     #[test]
     fn test_rank_and_get() {

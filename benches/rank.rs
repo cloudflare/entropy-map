@@ -1,12 +1,9 @@
-use std::env;
-use std::hint::black_box;
-use std::time::Instant;
+use std::{env, hint::black_box, time::Instant};
 
 use entropy_map::{RankedBits, RankedBitsAccess};
 
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
-use rand::prelude::SliceRandom;
-use rand::random;
+use rand::{prelude::SliceRandom, random};
 
 /// Benchmark results for N = 1M:
 ///

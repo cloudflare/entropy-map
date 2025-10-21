@@ -10,10 +10,12 @@
 //! dynamically update membership. However, when the `rkyv_derive` feature is enabled, you can use
 //! [`rkyv`](https://rkyv.org/) to perform zero-copy deserialization of a new set.
 
-use std::borrow::Borrow;
-use std::collections::HashSet;
-use std::hash::{Hash, Hasher};
-use std::mem::size_of_val;
+use std::{
+    borrow::Borrow,
+    collections::HashSet,
+    hash::{Hash, Hasher},
+    mem::size_of_val,
+};
 
 use num::{PrimInt, Unsigned};
 use wyhash::WyHash;

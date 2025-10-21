@@ -1,6 +1,4 @@
-use std::env;
-use std::hint::black_box;
-use std::time::Instant;
+use std::{env, hint::black_box, time::Instant};
 
 use entropy_map::{ArchivedMphf, Mphf};
 

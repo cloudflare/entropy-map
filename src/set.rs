@@ -70,7 +70,7 @@ where
             }
         }
 
-        Ok(Set { mphf, keys: keys.into_boxed_slice() })
+        Ok(Self { mphf, keys: keys.into_boxed_slice() })
     }
 
     /// Returns `true` if the set contains the value.

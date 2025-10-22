@@ -139,7 +139,7 @@ impl RankedBits {
             l12_ranks.push(l12_rank.into());
         }
 
-        RankedBits { bits, l12_ranks: l12_ranks.into_boxed_slice() }
+        Self { bits, l12_ranks: l12_ranks.into_boxed_slice() }
     }
 
     /// Returns the total number of bytes occupied by `RankedBits`

@@ -33,12 +33,12 @@ pub fn benchmark(c: &mut Criterion) {
         overhead
     );
 
-    let mut group = c.benchmark_group("ranked_bits");
+    let mut group = c.benchmark_group("RankedBits");
     group.throughput(Throughput::Elements(query_n as u64));
     group.bench_function("rank", |b| {
         b.iter(|| {
             for &idx in indices.iter().take(query_n) {
-                ranked_bits.rank(black_box(idx)).unwrap_or_default();
+                black_box(ranked_bits.rank(idx).unwrap_or_default());
             }
         });
     });

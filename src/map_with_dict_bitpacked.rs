@@ -53,7 +53,7 @@ pub enum Error {
 
 impl<K, const B: usize, const S: usize, ST, H> MapWithDictBitpacked<K, B, S, ST, H>
 where
-    K: Hash + PartialEq + Clone,
+    K: Hash,
     ST: PrimInt + Unsigned,
     H: Hasher + Default,
 {
@@ -71,7 +71,7 @@ where
         let v_len = iter.peek().map_or(0, |(_, v)| v.len());
 
         for (k, v) in iter {
-            keys.push(k.clone());
+            keys.push(k);
 
             if v.len() != v_len {
                 return Err(Error::NotEqualValuesLengths);
@@ -81,13 +81,14 @@ where
                 // re-use dictionary offset if found in cache
                 values_index.push(offset);
             } else {
-                // store current dictionary length as an offset in both index and cache
                 let offset = values_dict.len();
-                offsets_cache.insert(v.clone(), offset);
-                values_index.push(offset);
 
                 // append packed values to the dictionary
                 pack_values(&v, &mut values_dict);
+
+                // store dictionary length as an offset in both index and cache
+                offsets_cache.insert(v, offset);
+                values_index.push(offset);
             }
         }
 

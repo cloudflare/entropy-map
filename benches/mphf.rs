@@ -32,7 +32,7 @@ pub fn benchmark(c: &mut Criterion) {
     let n: usize = env::var("N").unwrap_or("1000000".to_string()).parse().unwrap();
     let query_n: usize = env::var("QN").unwrap_or("1000000".to_string()).parse().unwrap();
 
-    let mut group = c.benchmark_group("mphf");
+    let mut group = c.benchmark_group("Mphf");
     group.throughput(Throughput::Elements(query_n as u64));
 
     let t0 = Instant::now();
@@ -53,7 +53,7 @@ pub fn benchmark(c: &mut Criterion) {
         group.bench_function(format!("mphf-get/gamma-{:.1}", gamma), |b| {
             b.iter(|| {
                 for item in items.iter().take(query_n) {
-                    mphf.get(black_box(item)).unwrap();
+                    black_box(mphf.get(item).unwrap());
                 }
             });
         });
@@ -67,7 +67,7 @@ pub fn benchmark(c: &mut Criterion) {
         group.bench_function(format!("rkyv-mphf-get/gamma-{:.1}", gamma), |b| {
             b.iter(|| {
                 for item in items.iter().take(query_n) {
-                    rkyv_mphf.get(black_box(item)).unwrap();
+                    black_box(rkyv_mphf.get(item).unwrap());
                 }
             });
         });

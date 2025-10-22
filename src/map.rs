@@ -1,10 +1,9 @@
-//! A module providing `MapWithDict`, an immutable hash map implementation.
+//! A module providing `Map`, an immutable hash map implementation.
 //!
-//! `MapWithDict` is a hash map structure that optimizes for space by utilizing a minimal perfect
-//! hash function (MPHF) for indexing the map's keys. This enables efficient storage and retrieval,
-//! as it reduces the overall memory footprint by packing unique values into a dictionary. The MPHF
-//! provides direct access to the indices of keys, which correspond to their respective values in
-//! the values dictionary. Keys are stored to ensure that `get` operation will return `None` if key
+//! `Map` is a hash map structure that optimizes for space by utilizing a minimal perfect
+//! hash function (MPHF) for indexing the map's keys.
+//! The MPHF provides direct access to the indices of keys.
+//! Keys are stored to ensure that `get` operation will return `None` if key
 //! wasn't present in the original set.
 
 use std::{
@@ -19,10 +18,10 @@ use wyhash::WyHash;
 
 use crate::mphf::{Mphf, MphfError, DEFAULT_GAMMA};
 
-/// An efficient, immutable hash map with values dictionary-packed for optimized space usage.
+/// An efficient, immutable hash map.
 #[derive(Default)]
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
-pub struct MapWithDict<K, V, const B: usize = 32, const S: usize = 8, ST = u8, H = WyHash>
+pub struct Map<K, V, const B: usize = 32, const S: usize = 8, ST = u8, H = WyHash>
 where
     ST: PrimInt + Unsigned,
     H: Hasher + Default,
@@ -31,42 +30,27 @@ where
     mphf: Mphf<B, S, ST, H>,
     /// Map keys
     keys: Box<[K]>,
-    /// Points to the value index in the dictionary
-    values_index: Box<[usize]>,
-    /// Map unique values
-    values_dict: Box<[V]>,
+    /// Map values
+    values: Box<[V]>,
 }
 
-impl<K, V, const B: usize, const S: usize, ST, H> MapWithDict<K, V, B, S, ST, H>
+impl<K, V, const B: usize, const S: usize, ST, H> Map<K, V, B, S, ST, H>
 where
     K: Hash,
-    V: Eq + Clone + Hash,
     ST: PrimInt + Unsigned,
     H: Hasher + Default,
 {
-    /// Constructs a `MapWithDict` from an iterator of key-value pairs and MPHF function params.
+    /// Constructs a `Map` from an iterator of key-value pairs and MPHF function params.
     pub fn from_iter_with_params<I>(iter: I, gamma: f32) -> Result<Self, MphfError>
     where
         I: IntoIterator<Item = (K, V)>,
     {
         let mut keys = vec![];
-        let mut values_index = vec![];
-        let mut values_dict = vec![];
-        let mut offsets_cache = HashMap::new();
+        let mut values = vec![];
 
         for (k, v) in iter {
             keys.push(k);
-
-            if let Some(&offset) = offsets_cache.get(&v) {
-                // re-use dictionary offset if found in cache
-                values_index.push(offset);
-            } else {
-                // store current dictionary length as an offset in both index and cache
-                let offset = values_dict.len();
-                offsets_cache.insert(v.clone(), offset);
-                values_index.push(offset);
-                values_dict.push(v);
-            }
+            values.push(v);
         }
 
         let mphf = Mphf::from_slice(&keys, gamma)?;
@@ -79,16 +63,11 @@ where
                     break;
                 }
                 keys.swap(i, idx);
-                values_index.swap(i, idx);
+                values.swap(i, idx);
             }
         }
 
-        Ok(Self {
-            mphf,
-            keys: keys.into_boxed_slice(),
-            values_index: values_index.into_boxed_slice(),
-            values_dict: values_dict.into_boxed_slice(),
-        })
+        Ok(Self { mphf, keys: keys.into_boxed_slice(), values: values.into_boxed_slice() })
     }
 
     /// Returns a reference to the value corresponding to the key. Returns `None` if the key is
@@ -97,8 +76,8 @@ where
     /// # Examples
     /// ```
     /// # use std::collections::HashMap;
-    /// # use entropy_map::MapWithDict;
-    /// let map = MapWithDict::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
+    /// # use entropy_map::Map;
+    /// let map = Map::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
     /// assert_eq!(map.get(&1), Some(&2));
     /// assert_eq!(map.get(&5), None);
     /// ```
@@ -113,9 +92,7 @@ where
         // SAFETY: `idx` is always within bounds (ensured during construction)
         unsafe {
             if self.keys.get_unchecked(idx) == key {
-                // SAFETY: `idx` and `value_idx` are always within bounds (ensure during construction)
-                let value_idx = *self.values_index.get_unchecked(idx);
-                Some(self.values_dict.get_unchecked(value_idx))
+                Some(self.values.get_unchecked(idx))
             } else {
                 None
             }
@@ -127,8 +104,8 @@ where
     /// # Examples
     /// ```
     /// # use std::collections::HashMap;
-    /// # use entropy_map::MapWithDict;
-    /// let map = MapWithDict::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
+    /// # use entropy_map::Map;
+    /// let map = Map::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
     /// assert_eq!(map.len(), 2);
     /// ```
     #[inline]
@@ -141,10 +118,10 @@ where
     /// # Examples
     /// ```
     /// # use std::collections::HashMap;
-    /// # use entropy_map::MapWithDict;
-    /// let map = MapWithDict::try_from(HashMap::from([(0, 0); 0])).unwrap();
+    /// # use entropy_map::Map;
+    /// let map = Map::try_from(HashMap::from([(0, 0); 0])).unwrap();
     /// assert_eq!(map.is_empty(), true);
-    /// let map = MapWithDict::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
+    /// let map = Map::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
     /// assert_eq!(map.is_empty(), false);
     /// ```
     #[inline]
@@ -157,8 +134,8 @@ where
     /// # Examples
     /// ```
     /// # use std::collections::HashMap;
-    /// # use entropy_map::MapWithDict;
-    /// let map = MapWithDict::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
+    /// # use entropy_map::Map;
+    /// let map = Map::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
     /// assert_eq!(map.contains_key(&1), true);
     /// assert_eq!(map.contains_key(&2), false);
     /// ```
@@ -181,22 +158,15 @@ where
     /// # Examples
     /// ```
     /// # use std::collections::HashMap;
-    /// # use entropy_map::MapWithDict;
-    /// let map = MapWithDict::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
+    /// # use entropy_map::Map;
+    /// let map = Map::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
     /// for (key, val) in map.iter() {
     ///     println!("key: {key} val: {val}");
     /// }
     /// ```
     #[inline]
     pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
-        self.keys
-            .iter()
-            .zip(self.values_index.iter())
-            .map(move |(key, &value_idx)| {
-                // SAFETY: `value_idx` is always within bounds (ensured during construction)
-                let value = unsafe { self.values_dict.get_unchecked(value_idx) };
-                (key, value)
-            })
+        self.keys.iter().zip(self.values.iter())
     }
 
     /// Returns an iterator over the keys of the map.
@@ -204,8 +174,8 @@ where
     /// # Examples
     /// ```
     /// # use std::collections::HashMap;
-    /// # use entropy_map::MapWithDict;
-    /// let map = MapWithDict::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
+    /// # use entropy_map::Map;
+    /// let map = Map::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
     /// for key in map.keys() {
     ///     println!("{key}");
     /// }
@@ -220,18 +190,15 @@ where
     /// # Examples
     /// ```
     /// # use std::collections::HashMap;
-    /// # use entropy_map::MapWithDict;
-    /// let map = MapWithDict::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
+    /// # use entropy_map::Map;
+    /// let map = Map::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
     /// for val in map.values() {
     ///     println!("{val}");
     /// }
     /// ```
     #[inline]
     pub fn values(&self) -> impl Iterator<Item = &V> {
-        self.values_index.iter().map(move |&value_idx| {
-            // SAFETY: `value_idx` is always within bounds (ensured during construction)
-            unsafe { self.values_dict.get_unchecked(value_idx) }
-        })
+        self.values.iter()
     }
 
     /// Returns the total number of bytes occupied by the structure.
@@ -239,22 +206,18 @@ where
     /// # Examples
     /// ```
     /// # use std::collections::HashMap;
-    /// # use entropy_map::MapWithDict;
-    /// let map = MapWithDict::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
-    /// assert_eq!(map.size(), 270);
+    /// # use entropy_map::Map;
+    /// let map = Map::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
+    /// assert_eq!(map.size(), 238);
     /// ```
     #[inline]
     pub fn size(&self) -> usize {
-        size_of_val(self)
-            + self.mphf.size()
-            + size_of_val(self.keys.as_ref())
-            + size_of_val(self.values_index.as_ref())
-            + size_of_val(self.values_dict.as_ref())
+        size_of_val(self) + self.mphf.size() + size_of_val(self.keys.as_ref()) + size_of_val(self.values.as_ref())
     }
 }
 
-/// Creates a `MapWithDict` from a `HashMap`.
-impl<K, V> TryFrom<HashMap<K, V>> for MapWithDict<K, V>
+/// Creates a `Map` from a `HashMap`.
+impl<K, V> TryFrom<HashMap<K, V>> for Map<K, V>
 where
     K: Eq + Hash + Clone,
     V: Eq + Clone + Hash,
@@ -267,9 +230,9 @@ where
     }
 }
 
-/// Implement `get` for `Archived` version of `MapWithDict` if feature is enabled
+/// Implement `get` for `Archived` version of `Map` if feature is enabled
 #[cfg(feature = "rkyv_derive")]
-impl<K, V, const B: usize, const S: usize, ST, H> ArchivedMapWithDict<K, V, B, S, ST, H>
+impl<K, V, const B: usize, const S: usize, ST, H> ArchivedMap<K, V, B, S, ST, H>
 where
     K: PartialEq + Hash + rkyv::Archive,
     K::Archived: PartialEq<K>,
@@ -282,11 +245,11 @@ where
     /// # Examples
     /// ```
     /// # use std::collections::HashMap;
-    /// # use entropy_map::ArchivedMapWithDict;
-    /// # use entropy_map::MapWithDict;
-    /// let map = MapWithDict::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
+    /// # use entropy_map::ArchivedMap;
+    /// # use entropy_map::Map;
+    /// let map = Map::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
     /// let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&map).unwrap();
-    /// let archived_map = rkyv::access::<ArchivedMapWithDict<u32, u32>, rkyv::rancor::Error>(&bytes).unwrap();
+    /// let archived_map = rkyv::access::<ArchivedMap<u32, u32>, rkyv::rancor::Error>(&bytes).unwrap();
     /// assert_eq!(archived_map.contains_key(&1), true);
     /// assert_eq!(archived_map.contains_key(&2), false);
     /// ```
@@ -311,11 +274,11 @@ where
     /// # Examples
     /// ```
     /// # use std::collections::HashMap;
-    /// # use entropy_map::ArchivedMapWithDict;
-    /// # use entropy_map::MapWithDict;
-    /// let map = MapWithDict::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
+    /// # use entropy_map::ArchivedMap;
+    /// # use entropy_map::Map;
+    /// let map = Map::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
     /// let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&map).unwrap();
-    /// let archived_map = rkyv::access::<ArchivedMapWithDict<u32, u32>, rkyv::rancor::Error>(&bytes).unwrap();
+    /// let archived_map = rkyv::access::<ArchivedMap<u32, u32>, rkyv::rancor::Error>(&bytes).unwrap();
     /// assert_eq!(archived_map.get(&1).map(|v| v.to_native()), Some(2));
     /// assert_eq!(archived_map.get(&5).map(|v| v.to_native()), None);
     /// ```
@@ -331,9 +294,7 @@ where
         // SAFETY: `idx` is always within bounds (ensured during construction)
         unsafe {
             if self.keys.get_unchecked(idx) == key {
-                // SAFETY: `idx` and `value_idx` are always within bounds (ensure during construction)
-                let value_idx = self.values_index.get_unchecked(idx).to_native() as usize;
-                Some(self.values_dict.get_unchecked(value_idx))
+                Some(self.values.get_unchecked(idx))
             } else {
                 None
             }
@@ -343,14 +304,7 @@ where
     /// Returns an iterator over the archived map, yielding archived key-value pairs.
     #[inline]
     pub fn iter(&self) -> impl Iterator<Item = (&K::Archived, &V::Archived)> {
-        self.keys
-            .iter()
-            .zip(self.values_index.iter())
-            .map(move |(key, &value_idx)| {
-                // SAFETY: `value_idx` is always within bounds (ensured during construction)
-                let value = unsafe { self.values_dict.get_unchecked(value_idx.to_native() as usize) };
-                (key, value)
-            })
+        self.keys.iter().zip(self.values.iter())
     }
 }
 
@@ -381,7 +335,7 @@ mod tests {
         let original_map = gen_map(1000);
 
         // Create the map from the iterator
-        let map = MapWithDict::try_from(original_map.clone()).unwrap();
+        let map = Map::try_from(original_map.clone()).unwrap();
 
         // Test len
         assert_eq!(map.len(), original_map.len());
@@ -411,14 +365,14 @@ mod tests {
         }
 
         // Test size
-        assert_eq!(map.size(), 16626);
+        assert_eq!(map.size(), 12570);
     }
 
     /// Assert that we can call `.get()` with `K::borrow()`.
     #[test]
     fn test_get_borrow() {
         let original_map = HashMap::from_iter([("a".to_string(), ()), ("b".to_string(), ())]);
-        let map = MapWithDict::try_from(original_map).unwrap();
+        let map = Map::try_from(original_map).unwrap();
 
         assert_eq!(map.get("a"), Some(&()));
         assert!(map.contains_key("a"));
@@ -431,14 +385,14 @@ mod tests {
     #[cfg(feature = "rkyv_derive")]
     #[test]
     fn test_rkyv() {
-        // create regular `HashMap`, then `MapWithDict`, then serialize to `rkyv` bytes.
+        // create regular `HashMap`, then `Map`, then serialize to `rkyv` bytes.
         let original_map = gen_map(1000);
-        let map = MapWithDict::try_from(original_map.clone()).unwrap();
+        let map = Map::try_from(original_map.clone()).unwrap();
         let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&map).unwrap();
 
-        assert_eq!(rkyv_bytes.len(), 12480);
+        assert_eq!(rkyv_bytes.len(), 12432);
 
-        let rkyv_map = rkyv::access::<ArchivedMapWithDict<u64, u32>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
+        let rkyv_map = rkyv::access::<ArchivedMap<u64, u32>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
 
         // Test get on `Archived` version
         for (k, v) in original_map.iter() {
@@ -455,9 +409,9 @@ mod tests {
     #[test]
     fn test_rkyv_get_borrow() {
         let original_map = HashMap::from_iter([("a".to_string(), ()), ("b".to_string(), ())]);
-        let map = MapWithDict::try_from(original_map).unwrap();
+        let map = Map::try_from(original_map).unwrap();
         let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&map).unwrap();
-        let rkyv_map = rkyv::access::<ArchivedMapWithDict<String, ()>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
+        let rkyv_map = rkyv::access::<ArchivedMap<String, ()>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
 
         assert_eq!(map.get("a"), Some(&()));
         assert!(rkyv_map.contains_key("a"));
@@ -474,7 +428,7 @@ mod tests {
                     proptest! {
                         #[test]
                         fn [<proptest_map_with_dict_model_ $b _ $s _ $gamma>](model: HashMap<u64, u64>, arbitrary: HashSet<u64>) {
-                            let entropy_map: MapWithDict<u64, u64, $b, $s> = MapWithDict::from_iter_with_params(
+                            let entropy_map: Map<u64, u64, $b, $s> = Map::from_iter_with_params(
                                 model.clone(),
                                 $gamma as f32 / 100.0
                             ).unwrap();

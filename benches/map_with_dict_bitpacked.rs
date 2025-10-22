@@ -40,13 +40,13 @@ pub fn benchmark(c: &mut Criterion) {
     let map = MapWithDictBitpacked::try_from(original_map.clone()).expect("failed to build map");
     println!("map_with_dict_bitpacked construction took: {:?}", t0.elapsed());
 
-    let mut group = c.benchmark_group("map_with_dict_bitpacked");
+    let mut group = c.benchmark_group("MapWithDictBitpacked");
     group.throughput(Throughput::Elements(query_n as u64));
 
     group.bench_function("get_values", |b| {
         b.iter(|| {
             for key in original_map.keys().take(query_n) {
-                map.get_values(black_box(key), &mut values_buf);
+                black_box(map.get_values(key, &mut values_buf));
             }
         });
     });
@@ -60,7 +60,7 @@ pub fn benchmark(c: &mut Criterion) {
     group.bench_function("get-rkyv", |b| {
         b.iter(|| {
             for key in original_map.keys().take(query_n) {
-                rkyv_map.get_values(black_box(key), &mut values_buf);
+                black_box(rkyv_map.get_values(key, &mut values_buf));
             }
         });
     });

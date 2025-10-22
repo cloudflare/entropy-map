@@ -11,3 +11,60 @@ pub use map_with_dict_bitpacked::*;
 pub use mphf::*;
 pub use rank::*;
 pub use set::*;
+
+pub trait GroupSeed {
+    fn into_u32(self) -> u32;
+}
+
+impl GroupSeed for u8 {
+    #[inline(always)]
+    fn into_u32(self) -> u32 {
+        self as u32
+    }
+}
+
+impl GroupSeed for u16 {
+    #[inline(always)]
+    fn into_u32(self) -> u32 {
+        self as u32
+    }
+}
+
+#[cfg(feature = "rkyv_derive")]
+impl GroupSeed for rkyv::rend::u16_le {
+    #[inline(always)]
+    fn into_u32(self) -> u32 {
+        self.to_native() as u32
+    }
+}
+
+#[cfg(feature = "rkyv_derive")]
+impl GroupSeed for rkyv::rend::u16_be {
+    #[inline(always)]
+    fn into_u32(self) -> u32 {
+        self.to_native() as u32
+    }
+}
+
+impl GroupSeed for u32 {
+    #[inline(always)]
+    fn into_u32(self) -> u32 {
+        self
+    }
+}
+
+#[cfg(feature = "rkyv_derive")]
+impl GroupSeed for rkyv::rend::u32_le {
+    #[inline(always)]
+    fn into_u32(self) -> u32 {
+        self.to_native()
+    }
+}
+
+#[cfg(feature = "rkyv_derive")]
+impl GroupSeed for rkyv::rend::u32_be {
+    #[inline(always)]
+    fn into_u32(self) -> u32 {
+        self.to_native()
+    }
+}

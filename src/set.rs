@@ -20,7 +20,10 @@ use std::{
 use num::{PrimInt, Unsigned};
 use wyhash::WyHash;
 
-use crate::mphf::{Mphf, MphfError, DEFAULT_GAMMA};
+use crate::{
+    mphf::{Mphf, MphfError, DEFAULT_GAMMA},
+    GroupSeed,
+};
 
 /// An efficient, immutable set.
 #[derive(Default)]
@@ -39,7 +42,7 @@ where
 impl<K, const B: usize, const S: usize, ST, H> Set<K, B, S, ST, H>
 where
     K: Eq + Hash,
-    ST: PrimInt + Unsigned,
+    ST: PrimInt + Unsigned + GroupSeed,
     H: Hasher + Default,
 {
     /// Constructs a `Set` from an iterator of keys and MPHF function parameters.
@@ -176,7 +179,8 @@ impl<K, const B: usize, const S: usize, ST, H> ArchivedSet<K, B, S, ST, H>
 where
     K: Eq + Hash + rkyv::Archive,
     K::Archived: PartialEq<K>,
-    ST: PrimInt + Unsigned + rkyv::Archive<Archived = ST>,
+    ST: PrimInt + Unsigned + rkyv::Archive,
+    <ST as rkyv::Archive>::Archived: GroupSeed + Copy,
     H: Hasher + Default,
 {
     /// Returns `true` if the set contains the value.

@@ -8,24 +8,23 @@ use rand_chacha::ChaCha8Rng;
 
 /// Benchmark results for N = 1M:
 ///
-/// map generation took: 199.621887ms
-/// map_with_dict_bitpacked construction took: 2.36439657s
-/// map_with_dict_bitpacked rkyv serialization took: 20.455775ms
+/// MapWithDictBitpacked construction took: 1.530962829s
 ///
-/// # map_with_dict_bitpacked/get_values
-/// time:   [169.36 ms 170.24 ms 171.06 ms]
-/// thrpt:  [5.8459 Melem/s 5.8740 Melem/s 5.9044 Melem/s]
+/// MapWithDictBitpacked/get_values
+/// time:   [95.556 ms 96.288 ms 97.068 ms]
+/// thrpt:  [10.302 Melem/s 10.385 Melem/s 10.465 Melem/s]
 ///
-/// # map_with_dict_bitpacked/get_values-rkyv
-/// time:   [167.92 ms 168.82 ms 169.65 ms]
-/// thrpt:  [5.8946 Melem/s 5.9233 Melem/s 5.9553 Melem/s]
+/// MapWithDictBitpacked rkyv serialization took: 4.85859ms
+///
+/// MapWithDictBitpacked/archived get_values
+/// time:   [79.066 ms 79.977 ms 81.002 ms]
+/// thrpt:  [12.345 Melem/s 12.504 Melem/s 12.648 Melem/s]
 pub fn benchmark(c: &mut Criterion) {
     let n: usize = env::var("N").unwrap_or("1000000".to_string()).parse().unwrap();
     let query_n: usize = env::var("QN").unwrap_or("1000000".to_string()).parse().unwrap();
 
     let mut rng = ChaCha8Rng::seed_from_u64(123);
 
-    let t0 = Instant::now();
     let mut values_buf = vec![0; 10];
     let original_map: HashMap<u64, Vec<u32>> = (0..n)
         .map(|_| {
@@ -34,11 +33,10 @@ pub fn benchmark(c: &mut Criterion) {
             (key, value)
         })
         .collect();
-    println!("map generation took: {:?}", t0.elapsed());
 
     let t0 = Instant::now();
     let map = MapWithDictBitpacked::try_from(original_map.clone()).expect("failed to build map");
-    println!("map_with_dict_bitpacked construction took: {:?}", t0.elapsed());
+    println!("MapWithDictBitpacked construction took: {:?}", t0.elapsed());
 
     let mut group = c.benchmark_group("MapWithDictBitpacked");
     group.throughput(Throughput::Elements(query_n as u64));
@@ -53,7 +51,7 @@ pub fn benchmark(c: &mut Criterion) {
 
     let t0 = Instant::now();
     let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&map).unwrap();
-    println!("map_with_dict_bitpacked rkyv serialization took: {:?}", t0.elapsed());
+    println!("MapWithDictBitpacked rkyv serialization took: {:?}", t0.elapsed());
 
     let rkyv_map = rkyv::access::<ArchivedMapWithDictBitpacked<u64>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
 

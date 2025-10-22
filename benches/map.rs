@@ -6,13 +6,29 @@ use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
+/// Benchmark results for N = 1M:
+///
+/// Map construction took: 14.06023608s
+///
+/// Map/HashMap get
+/// time:   [18.350 ms 18.518 ms 18.707 ms]
+/// thrpt:  [53.455 Melem/s 54.001 Melem/s 54.496 Melem/s]
+///
+/// Map/entropy get
+/// time:   [29.678 ms 29.985 ms 30.320 ms]
+/// thrpt:  [32.982 Melem/s 33.350 Melem/s 33.695 Melem/s]
+///
+/// Map rkyv serialization took: 1.474797ms
+///
+/// Map/entropy archived get
+/// time:   [25.789 ms 26.182 ms 26.617 ms]
+/// thrpt:  [37.570 Melem/s 38.194 Melem/s 38.776 Melem/s]
 pub fn benchmark(c: &mut Criterion) {
     let n: usize = env::var("N").unwrap_or("1000000".to_string()).parse().unwrap();
     let query_n: usize = env::var("QN").unwrap_or("1000000".to_string()).parse().unwrap();
 
     let mut rng = ChaCha8Rng::seed_from_u64(123);
 
-    let t0 = Instant::now();
     let original_map: HashMap<u64, u32> = (0..n)
         .map(|_| {
             let key = rng.gen::<u64>();
@@ -20,14 +36,13 @@ pub fn benchmark(c: &mut Criterion) {
             (key, value)
         })
         .collect();
-    println!("map generation took: {:?}", t0.elapsed());
 
     // created with another hasher so the memory order is different to check random access
     let hash_map: HashMap<u64, u32, rustc_hash::FxBuildHasher> = HashMap::from_iter(original_map.clone());
 
     let t0 = Instant::now();
-    let map = Map::try_from(original_map.clone()).expect("failed to build map");
-    println!("map construction took: {:?}", t0.elapsed());
+    let map: Map<u64, u32, 64, 12, u16> = Map::from_iter_with_params(original_map.clone(), 2.4).unwrap();
+    println!("Map construction took: {:?}", t0.elapsed());
 
     let mut group = c.benchmark_group("Map");
     group.throughput(Throughput::Elements(query_n as u64));
@@ -50,9 +65,9 @@ pub fn benchmark(c: &mut Criterion) {
 
     let t0 = Instant::now();
     let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&map).unwrap();
-    println!("map rkyv serialization took: {:?}", t0.elapsed());
+    println!("Map rkyv serialization took: {:?}", t0.elapsed());
 
-    let rkyv_map = rkyv::access::<ArchivedMap<u64, u32>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
+    let rkyv_map = rkyv::access::<ArchivedMap<u64, u32, 64, 12, u16>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
 
     group.bench_function("entropy archived get", |b| {
         b.iter(|| {

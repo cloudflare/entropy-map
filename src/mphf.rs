@@ -22,6 +22,7 @@ use wyhash::WyHash;
 use crate::{
     mphf::MphfError::*,
     rank::{RankedBits, RankedBitsAccess},
+    GroupSeed,
 };
 
 /// A Minimal Perfect Hash Function (MPHF).
@@ -246,7 +247,10 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
     /// Returns the index associated with `key`, within 0 to the key collection size (exclusive).
     /// If `key` was not in the initial collection, returns `None` or an arbitrary value from the range.
     #[inline]
-    pub fn get<K: Hash + ?Sized>(&self, key: &K) -> Option<usize> {
+    pub fn get<K: Hash + ?Sized>(&self, key: &K) -> Option<usize>
+    where
+        ST: GroupSeed + Copy,
+    {
         Self::get_impl(
             key,
             self.level_groups.iter().copied(),
@@ -258,10 +262,10 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
     /// Inner implementation of `get` with `level_groups`, `group_seeds` and `ranked_bits` passed
     /// from standard and `Archived` version of `Mphf`.
     #[inline]
-    fn get_impl<K: Hash + ?Sized>(
+    fn get_impl<K: Hash + ?Sized, GS: GroupSeed + Copy>(
         key: &K,
         level_groups: impl Iterator<Item = u32>,
-        group_seeds: &[ST],
+        group_seeds: &[GS],
         ranked_bits: &impl RankedBitsAccess,
     ) -> Option<usize> {
         let mut groups_before = 0;
@@ -269,7 +273,7 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
             let level_hash = hash_with_seed(hash_key::<H, _>(key), level as u32);
             let group_idx = groups_before + fastmod32(level_hash as u32, groups);
             // SAFETY: `group_idx` is always within bounds (ensured during calculation)
-            let group_seed = unsafe { group_seeds.get_unchecked(group_idx).to_u32().unwrap() };
+            let group_seed = unsafe { group_seeds.get_unchecked(group_idx).into_u32() };
             let bit_idx = bit_index_for_seed::<B>(level_hash, group_seed, group_idx);
             if let Some(rank) = ranked_bits.rank(bit_idx) {
                 return Some(rank);
@@ -329,7 +333,8 @@ fn fastmod32(x: u32, n: u32) -> usize {
 #[cfg(feature = "rkyv_derive")]
 impl<const B: usize, const S: usize, ST, H> ArchivedMphf<B, S, ST, H>
 where
-    ST: PrimInt + Unsigned + rkyv::Archive<Archived = ST>,
+    ST: PrimInt + Unsigned + rkyv::Archive,
+    <ST as rkyv::Archive>::Archived: GroupSeed + Copy,
     H: Hasher + Default,
 {
     #[inline]
@@ -337,7 +342,7 @@ where
         Mphf::<B, S, ST, H>::get_impl(
             key,
             self.level_groups.iter().map(|v| v.to_native()),
-            &self.group_seeds,
+            self.group_seeds.get(),
             &self.ranked_bits,
         )
     }

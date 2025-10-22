@@ -16,7 +16,10 @@ use std::{
 use num::{PrimInt, Unsigned};
 use wyhash::WyHash;
 
-use crate::mphf::{Mphf, MphfError, DEFAULT_GAMMA};
+use crate::{
+    mphf::{Mphf, MphfError, DEFAULT_GAMMA},
+    GroupSeed,
+};
 
 /// An efficient, immutable hash map.
 #[derive(Default)]
@@ -34,7 +37,7 @@ where
 impl<K, V, const B: usize, const S: usize, ST, H> MapTuple<K, V, B, S, ST, H>
 where
     K: Hash,
-    ST: PrimInt + Unsigned,
+    ST: PrimInt + Unsigned + GroupSeed,
     H: Hasher + Default,
 {
     /// Constructs a `Map` from an iterator of key-value pairs and MPHF function params.
@@ -229,7 +232,8 @@ where
     K: PartialEq + Hash + rkyv::Archive,
     K::Archived: PartialEq<K>,
     V: rkyv::Archive,
-    ST: PrimInt + Unsigned + rkyv::Archive<Archived = ST>,
+    ST: PrimInt + Unsigned + rkyv::Archive,
+    <ST as rkyv::Archive>::Archived: GroupSeed + Copy,
     H: Hasher + Default,
 {
     /// Checks if the map contains the specified key.
@@ -366,7 +370,8 @@ mod tests {
     /// Assert that we can call `.get()` with `K::borrow()`.
     #[test]
     fn test_get_borrow() {
-        let original_map = HashMap::from_iter([("a".to_string(), ()), ("b".to_string(), ())]);
+        let original_map: HashMap<String, (), RandomState> =
+            HashMap::from_iter([("a".to_string(), ()), ("b".to_string(), ())]);
         let map = MapTuple::try_from(original_map).unwrap();
 
         assert_eq!(map.get("a"), Some(&()));
@@ -403,7 +408,8 @@ mod tests {
     #[cfg(feature = "rkyv_derive")]
     #[test]
     fn test_rkyv_get_borrow() {
-        let original_map = HashMap::from_iter([("a".to_string(), ()), ("b".to_string(), ())]);
+        let original_map: HashMap<String, (), RandomState> =
+            HashMap::from_iter([("a".to_string(), ()), ("b".to_string(), ())]);
         let map = MapTuple::try_from(original_map).unwrap();
         let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&map).unwrap();
         let rkyv_map = rkyv::access::<ArchivedMapTuple<String, ()>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();

@@ -16,7 +16,10 @@ use std::{
 use num::{PrimInt, Unsigned};
 use wyhash::WyHash;
 
-use crate::mphf::{Mphf, MphfError, DEFAULT_GAMMA};
+use crate::{
+    mphf::{Mphf, MphfError, DEFAULT_GAMMA},
+    GroupSeed,
+};
 
 /// An efficient, immutable hash map.
 #[derive(Default)]
@@ -37,7 +40,7 @@ where
 impl<K, V, const B: usize, const S: usize, ST, H> Map<K, V, B, S, ST, H>
 where
     K: Hash,
-    ST: PrimInt + Unsigned,
+    ST: PrimInt + Unsigned + GroupSeed,
     H: Hasher + Default,
 {
     /// Constructs a `Map` from an iterator of key-value pairs and MPHF function params.
@@ -238,7 +241,8 @@ where
     K: PartialEq + Hash + rkyv::Archive,
     K::Archived: PartialEq<K>,
     V: rkyv::Archive,
-    ST: PrimInt + Unsigned + rkyv::Archive<Archived = ST>,
+    ST: PrimInt + Unsigned + rkyv::Archive,
+    <ST as rkyv::Archive>::Archived: GroupSeed + Copy,
     H: Hasher + Default,
 {
     /// Checks if the map contains the specified key.
@@ -336,7 +340,7 @@ mod tests {
         let original_map = gen_map(1000);
 
         // Create the map from the iterator
-        let map = Map::try_from(original_map.clone()).unwrap();
+        let map: Map<u64, u32, 64, 16, u16> = Map::from_iter_with_params(original_map.clone(), DEFAULT_GAMMA).unwrap();
 
         // Test len
         assert_eq!(map.len(), original_map.len());
@@ -366,7 +370,7 @@ mod tests {
         }
 
         // Test size
-        assert_eq!(map.size(), 12570);
+        assert_eq!(map.size(), 12546);
     }
 
     /// Assert that we can call `.get()` with `K::borrow()`.
@@ -389,12 +393,12 @@ mod tests {
     fn test_rkyv() {
         // create regular `HashMap`, then `Map`, then serialize to `rkyv` bytes.
         let original_map = gen_map(1000);
-        let map = Map::try_from(original_map.clone()).unwrap();
+        let map: Map<u64, u32, 64, 16, u16> = Map::from_iter_with_params(original_map.clone(), DEFAULT_GAMMA).unwrap();
         let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&map).unwrap();
 
-        assert_eq!(rkyv_bytes.len(), 12432);
+        assert_eq!(rkyv_bytes.len(), 12408);
 
-        let rkyv_map = rkyv::access::<ArchivedMap<u64, u32>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
+        let rkyv_map = rkyv::access::<ArchivedMap<u64, u32, 64, 16, u16>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
 
         // Test get on `Archived` version
         for (k, v) in original_map.iter() {

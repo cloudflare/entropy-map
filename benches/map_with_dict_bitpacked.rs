@@ -57,7 +57,7 @@ pub fn benchmark(c: &mut Criterion) {
 
     let rkyv_map = rkyv::access::<ArchivedMapWithDictBitpacked<u64>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
 
-    group.bench_function("get-rkyv", |b| {
+    group.bench_function("archived get_values", |b| {
         b.iter(|| {
             for key in original_map.keys().take(query_n) {
                 black_box(rkyv_map.get_values(key, &mut values_buf));

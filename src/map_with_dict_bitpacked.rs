@@ -14,7 +14,7 @@
 use std::{
     borrow::Borrow,
     collections::HashMap,
-    hash::{Hash, Hasher},
+    hash::{BuildHasher, Hash, Hasher},
     mem::size_of_val,
 };
 
@@ -141,13 +141,12 @@ where
             None => return false,
         };
 
-        // SAFETY: `idx` is always within bounds (ensured during construction)
+        // SAFETY: `idx` and `value_idx` are always within bounds (ensured during construction)
         unsafe {
             if self.keys.get_unchecked(idx) != key {
                 return false;
             }
 
-            // SAFETY: `idx` and `value_idx` are always within bounds (ensure during construction)
             let value_idx = *self.values_index.get_unchecked(idx);
             let dict = self.values_dict.get_unchecked(value_idx..);
             unpack_values(dict, values);
@@ -289,14 +288,15 @@ where
 }
 
 /// Creates a `MapWithDictBitpacked` from a `HashMap`.
-impl<K> TryFrom<HashMap<K, Vec<u32>>> for MapWithDictBitpacked<K>
+impl<K, B> TryFrom<HashMap<K, Vec<u32>, B>> for MapWithDictBitpacked<K>
 where
     K: PartialEq + Hash + Clone,
+    B: BuildHasher,
 {
     type Error = Error;
 
     #[inline]
-    fn try_from(value: HashMap<K, Vec<u32>>) -> Result<Self, Self::Error> {
+    fn try_from(value: HashMap<K, Vec<u32>, B>) -> Result<Self, Self::Error> {
         MapWithDictBitpacked::from_iter_with_params(value, DEFAULT_GAMMA)
     }
 }
@@ -382,13 +382,12 @@ where
             None => return false,
         };
 
-        // SAFETY: `idx` is always within bounds (ensured during construction)
+        // SAFETY: `idx` and `value_idx` are always within bounds (ensured during construction)
         unsafe {
             if self.keys.get_unchecked(idx) != key {
                 return false;
             }
 
-            // SAFETY: `idx` and `value_idx` are always within bounds (ensure during construction)
             let value_idx = self.values_index.get_unchecked(idx).to_native() as usize;
             let dict = self.values_dict.get_unchecked(value_idx..);
             unpack_values(dict, values);

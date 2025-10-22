@@ -9,7 +9,7 @@
 use std::{
     borrow::Borrow,
     collections::HashMap,
-    hash::{Hash, Hasher},
+    hash::{BuildHasher, Hash, Hasher},
     mem::size_of_val,
 };
 
@@ -217,15 +217,16 @@ where
 }
 
 /// Creates a `Map` from a `HashMap`.
-impl<K, V> TryFrom<HashMap<K, V>> for Map<K, V>
+impl<K, V, B> TryFrom<HashMap<K, V, B>> for Map<K, V>
 where
     K: Eq + Hash + Clone,
     V: Eq + Clone + Hash,
+    B: BuildHasher,
 {
     type Error = MphfError;
 
     #[inline]
-    fn try_from(value: HashMap<K, V>) -> Result<Self, Self::Error> {
+    fn try_from(value: HashMap<K, V, B>) -> Result<Self, Self::Error> {
         Self::from_iter_with_params(value, DEFAULT_GAMMA)
     }
 }
@@ -371,7 +372,8 @@ mod tests {
     /// Assert that we can call `.get()` with `K::borrow()`.
     #[test]
     fn test_get_borrow() {
-        let original_map = HashMap::from_iter([("a".to_string(), ()), ("b".to_string(), ())]);
+        let original_map: HashMap<String, (), RandomState> =
+            HashMap::from_iter([("a".to_string(), ()), ("b".to_string(), ())]);
         let map = Map::try_from(original_map).unwrap();
 
         assert_eq!(map.get("a"), Some(&()));
@@ -408,7 +410,8 @@ mod tests {
     #[cfg(feature = "rkyv_derive")]
     #[test]
     fn test_rkyv_get_borrow() {
-        let original_map = HashMap::from_iter([("a".to_string(), ()), ("b".to_string(), ())]);
+        let original_map: HashMap<String, (), RandomState> =
+            HashMap::from_iter([("a".to_string(), ()), ("b".to_string(), ())]);
         let map = Map::try_from(original_map).unwrap();
         let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&map).unwrap();
         let rkyv_map = rkyv::access::<ArchivedMap<String, ()>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();

@@ -36,6 +36,9 @@ pub fn benchmark(c: &mut Criterion) {
         .collect();
     println!("map generation took: {:?}", t0.elapsed());
 
+    // created with another hasher so the memory order is different to check random access
+    let hash_map: HashMap<u64, u32, rustc_hash::FxBuildHasher> = HashMap::from_iter(original_map.clone());
+
     let t0 = Instant::now();
     let map = MapWithDict::try_from(original_map.clone()).expect("failed to build map");
     println!("map_with_dict construction took: {:?}", t0.elapsed());
@@ -43,7 +46,15 @@ pub fn benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("MapWithDict");
     group.throughput(Throughput::Elements(query_n as u64));
 
-    group.bench_function("get", |b| {
+    group.bench_function("HashMap get", |b| {
+        b.iter(|| {
+            for key in original_map.keys().take(query_n) {
+                black_box(hash_map.get(key).unwrap());
+            }
+        });
+    });
+
+    group.bench_function("entropy get", |b| {
         b.iter(|| {
             for key in original_map.keys().take(query_n) {
                 black_box(map.get(key).unwrap());
@@ -57,7 +68,7 @@ pub fn benchmark(c: &mut Criterion) {
 
     let rkyv_map = rkyv::access::<ArchivedMapWithDict<u64, u32>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
 
-    group.bench_function("get-rkyv", |b| {
+    group.bench_function("entropy archived get", |b| {
         b.iter(|| {
             for key in original_map.keys().take(query_n) {
                 black_box(rkyv_map.get(key).unwrap());

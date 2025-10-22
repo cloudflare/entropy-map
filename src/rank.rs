@@ -161,8 +161,9 @@ impl RankedBitsAccess for RankedBits {
 impl RankedBitsAccess for ArchivedRankedBits {
     #[inline]
     fn rank(&self, idx: usize) -> Option<usize> {
-        // transmute?
-        unsafe { Self::rank_impl(std::mem::transmute(self.bits.get()), &self.l12_ranks, idx) }
+        // todo: transmutes `u64_le` to `u64`. May result in incorrect bits on `be` targets.
+        // But if `be` user enables rkyv big_endian feature, it will not. So enable the feature for them.
+        unsafe { Self::rank_impl(core::mem::transmute(self.bits.get()), &self.l12_ranks, idx) }
     }
 }
 

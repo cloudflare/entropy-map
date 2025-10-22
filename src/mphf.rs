@@ -3,6 +3,9 @@
 //! This module implements a Minimal Perfect Hash Function (MPHF) based on fingerprinting techniques,
 //! as detailed in [Fingerprinting-based minimal perfect hashing revisited](https://doi.org/10.1145/3596453).
 //!
+//! If you query with keys that were not used at the time of construction, collisions can happen.
+//! Other structures are free of collisions, because they store `keys` and compare on each get.
+//!
 //! This implementation is inspired by existing Rust crate [ph](https://github.com/beling/bsuccinct-rs/tree/main/ph),
 //! but prioritizes code simplicity and portability, with a special focus on optimizing the rank
 //! storage mechanism and reducing the construction time and querying latency of MPHF.

@@ -30,7 +30,7 @@ pub fn benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("Set");
     group.throughput(Throughput::Elements(query_n as u64));
 
-    group.bench_function("entropy-contains-native", |b| {
+    group.bench_function("entropy contains", |b| {
         b.iter(|| {
             for key in original_set.iter().take(query_n) {
                 black_box(set.contains(key));
@@ -40,7 +40,7 @@ pub fn benchmark(c: &mut Criterion) {
 
     let set_fxhash: Set<u64, 32, 8, u8, rustc_hash::FxHasher> =
         Set::from_iter_with_params(original_set.iter().cloned(), DEFAULT_GAMMA).expect("failed to build set");
-    group.bench_function("entropy-contains-fxhash", |b| {
+    group.bench_function("entropy-fxhash contains", |b| {
         b.iter(|| {
             for key in original_set.iter().take(query_n) {
                 black_box(set_fxhash.contains(key));
@@ -50,7 +50,7 @@ pub fn benchmark(c: &mut Criterion) {
 
     let set_default_hasher: Set<u64, 32, 8, u8, DefaultHasher> =
         Set::from_iter_with_params(original_set.iter().cloned(), DEFAULT_GAMMA).expect("failed to build set");
-    group.bench_function("entropy-contains-defaulthasher", |b| {
+    group.bench_function("entropy-DefaultHasher contains", |b| {
         b.iter(|| {
             for key in original_set.iter().take(query_n) {
                 black_box(set_default_hasher.contains(key));
@@ -59,7 +59,7 @@ pub fn benchmark(c: &mut Criterion) {
     });
 
     let fxhash_set: HashSet<u64, rustc_hash::FxBuildHasher> = HashSet::from_iter(original_set.iter().cloned());
-    group.bench_function("std-contains-fxhash", |b| {
+    group.bench_function("HashSet-fxhash contains", |b| {
         b.iter(|| {
             for key in original_set.iter().take(query_n) {
                 black_box(fxhash_set.contains(key));
@@ -69,7 +69,7 @@ pub fn benchmark(c: &mut Criterion) {
 
     let defaulthasher_set: HashSet<u64, BuildHasherDefault<DefaultHasher>> =
         HashSet::from_iter(original_set.iter().cloned());
-    group.bench_function("std-contains-defaulthasher", |b| {
+    group.bench_function("HashSet-DefaultHasher contains", |b| {
         b.iter(|| {
             for key in original_set.iter().take(query_n) {
                 black_box(defaulthasher_set.contains(key));

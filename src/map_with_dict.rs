@@ -10,7 +10,7 @@
 use std::{
     borrow::Borrow,
     collections::HashMap,
-    hash::{Hash, Hasher},
+    hash::{BuildHasher, Hash, Hasher},
     mem::size_of_val,
 };
 
@@ -31,7 +31,9 @@ where
     mphf: Mphf<B, S, ST, H>,
     /// Map keys
     keys: Box<[K]>,
-    /// Points to the value index in the dictionary
+    /// Points to the value index in the dictionary.
+    /// If rkyv pointer width feature is not enabled, it will serialize usize as 32-bit integers by default.
+    /// So it limits the max amount of values if you use archived MapWithDict.
     values_index: Box<[usize]>,
     /// Map unique values
     values_dict: Box<[V]>,
@@ -110,10 +112,9 @@ where
     {
         let idx = self.mphf.get(key)?;
 
-        // SAFETY: `idx` is always within bounds (ensured during construction)
+        // SAFETY: `idx` and `value_idx` are always within bounds (ensured during construction)
         unsafe {
             if self.keys.get_unchecked(idx) == key {
-                // SAFETY: `idx` and `value_idx` are always within bounds (ensure during construction)
                 let value_idx = *self.values_index.get_unchecked(idx);
                 Some(self.values_dict.get_unchecked(value_idx))
             } else {
@@ -254,15 +255,16 @@ where
 }
 
 /// Creates a `MapWithDict` from a `HashMap`.
-impl<K, V> TryFrom<HashMap<K, V>> for MapWithDict<K, V>
+impl<K, V, B> TryFrom<HashMap<K, V, B>> for MapWithDict<K, V>
 where
     K: Eq + Hash + Clone,
     V: Eq + Clone + Hash,
+    B: BuildHasher,
 {
     type Error = MphfError;
 
     #[inline]
-    fn try_from(value: HashMap<K, V>) -> Result<Self, Self::Error> {
+    fn try_from(value: HashMap<K, V, B>) -> Result<Self, Self::Error> {
         Self::from_iter_with_params(value, DEFAULT_GAMMA)
     }
 }
@@ -328,10 +330,9 @@ where
     {
         let idx = self.mphf.get(key)?;
 
-        // SAFETY: `idx` is always within bounds (ensured during construction)
+        // SAFETY: `idx` and `value_idx` are always within bounds (ensured during construction)
         unsafe {
             if self.keys.get_unchecked(idx) == key {
-                // SAFETY: `idx` and `value_idx` are always within bounds (ensure during construction)
                 let value_idx = self.values_index.get_unchecked(idx).to_native() as usize;
                 Some(self.values_dict.get_unchecked(value_idx))
             } else {
@@ -417,7 +418,8 @@ mod tests {
     /// Assert that we can call `.get()` with `K::borrow()`.
     #[test]
     fn test_get_borrow() {
-        let original_map = HashMap::from_iter([("a".to_string(), ()), ("b".to_string(), ())]);
+        let original_map: HashMap<String, (), RandomState> =
+            HashMap::from_iter([("a".to_string(), ()), ("b".to_string(), ())]);
         let map = MapWithDict::try_from(original_map).unwrap();
 
         assert_eq!(map.get("a"), Some(&()));
@@ -454,7 +456,8 @@ mod tests {
     #[cfg(feature = "rkyv_derive")]
     #[test]
     fn test_rkyv_get_borrow() {
-        let original_map = HashMap::from_iter([("a".to_string(), ()), ("b".to_string(), ())]);
+        let original_map: HashMap<String, (), RandomState> =
+            HashMap::from_iter([("a".to_string(), ()), ("b".to_string(), ())]);
         let map = MapWithDict::try_from(original_map).unwrap();
         let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&map).unwrap();
         let rkyv_map = rkyv::access::<ArchivedMapWithDict<String, ()>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();

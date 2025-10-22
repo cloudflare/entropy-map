@@ -9,7 +9,7 @@
 use std::{
     borrow::Borrow,
     collections::HashMap,
-    hash::{Hash, Hasher},
+    hash::{BuildHasher, Hash, Hasher},
     mem::size_of_val,
 };
 
@@ -208,15 +208,16 @@ where
 }
 
 /// Creates a `Map` from a `HashMap`.
-impl<K, V> TryFrom<HashMap<K, V>> for MapTuple<K, V>
+impl<K, V, B> TryFrom<HashMap<K, V, B>> for MapTuple<K, V>
 where
     K: Eq + Hash + Clone,
     V: Eq + Clone + Hash,
+    B: BuildHasher,
 {
     type Error = MphfError;
 
     #[inline]
-    fn try_from(value: HashMap<K, V>) -> Result<Self, Self::Error> {
+    fn try_from(value: HashMap<K, V, B>) -> Result<Self, Self::Error> {
         Self::from_iter_with_params(value, DEFAULT_GAMMA)
     }
 }

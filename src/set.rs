@@ -196,11 +196,11 @@ where
     /// assert_eq!(archived_set.contains(&4), false);
     /// ```
     #[inline]
-    pub fn contains<Q: ?Sized>(&self, key: &Q) -> bool
+    pub fn contains<Q>(&self, key: &Q) -> bool
     where
         K: Borrow<Q>,
         <K as rkyv::Archive>::Archived: PartialEq<Q>,
-        Q: Hash + Eq,
+        Q: Hash + Eq + ?Sized,
     {
         // SAFETY: `idx` is always within bounds (ensured during construction)
         self.mphf

@@ -259,11 +259,11 @@ where
     /// assert_eq!(archived_map.contains_key(&2), false);
     /// ```
     #[inline]
-    pub fn contains_key<Q: ?Sized>(&self, key: &Q) -> bool
+    pub fn contains_key<Q>(&self, key: &Q) -> bool
     where
         K: Borrow<Q>,
         <K as rkyv::Archive>::Archived: PartialEq<Q>,
-        Q: Hash + Eq,
+        Q: Hash + Eq + ?Sized,
     {
         if let Some(idx) = self.mphf.get(key) {
             // SAFETY: `idx` is always within bounds (ensured during construction)
@@ -288,11 +288,11 @@ where
     /// assert_eq!(archived_map.get(&5).map(|v| v.to_native()), None);
     /// ```
     #[inline]
-    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<&V::Archived>
+    pub fn get<Q>(&self, key: &Q) -> Option<&V::Archived>
     where
         K: Borrow<Q>,
         <K as rkyv::Archive>::Archived: PartialEq<Q>,
-        Q: Hash + Eq,
+        Q: Hash + Eq + ?Sized,
     {
         let idx = self.mphf.get(key)?;
 

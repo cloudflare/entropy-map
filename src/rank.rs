@@ -162,8 +162,11 @@ impl RankedBitsAccess for ArchivedRankedBits {
     #[inline]
     fn rank(&self, idx: usize) -> Option<usize> {
         // todo: transmutes `u64_le` to `u64`. May result in incorrect bits on `be` targets.
-        // But if `be` user enables rkyv big_endian feature, it will not. So enable the feature for them.
-        unsafe { Self::rank_impl(core::mem::transmute(self.bits.get()), &self.l12_ranks, idx) }
+        // But if `be` user enables rkyv big_endian feature, it will be fixed. So maybe enable the feature for them.
+        #[allow(clippy::missing_transmute_annotations)]
+        unsafe {
+            Self::rank_impl(core::mem::transmute(self.bits.get()), &self.l12_ranks, idx)
+        }
     }
 }
 

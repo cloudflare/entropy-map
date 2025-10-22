@@ -9,25 +9,25 @@ use rand::random;
 ///
 /// Mphf (1.0) construction took: 1.291480619s, bits per key: 2.10
 ///
-/// Mphf/get gamma 1.0
+/// Mphf/get gamma: 1.0
 /// time:   [26.144 ms 26.267 ms 26.412 ms]
 /// thrpt:  [37.862 Melem/s 38.071 Melem/s 38.250 Melem/s]
 ///
 /// Mphf (1.0) rkyv serialization took: 21.024µs
 ///
-/// Mphf/archived get gamma 1.0
+/// Mphf/archived get gamma: 1.0
 /// time:   [26.309 ms 26.397 ms 26.520 ms]
 /// thrpt:  [37.707 Melem/s 37.883 Melem/s 38.010 Melem/s]
 ///
 /// Mphf (2.0) construction took: 982.578471ms, bits per key: 2.72
 ///
-/// Mphf/get gamma 2.0
+/// Mphf/get gamma: 2.0
 /// time:   [19.458 ms 19.683 ms 19.928 ms]
 /// thrpt:  [50.179 Melem/s 50.805 Melem/s 51.392 Melem/s]
 ///
 /// Mphf (2.0) rkyv serialization took: 24.643µs
 ///
-/// Mphf/archived get gamma 2.0
+/// Mphf/archived get gamma: 2.0
 /// time:   [19.901 ms 20.239 ms 20.663 ms]
 /// thrpt:  [48.396 Melem/s 49.411 Melem/s 50.250 Melem/s]
 pub fn benchmark(c: &mut Criterion) {
@@ -50,7 +50,7 @@ pub fn benchmark(c: &mut Criterion) {
             bits
         );
 
-        group.bench_function(format!("get gamma {:.1}", gamma), |b| {
+        group.bench_function(format!("get gamma: {:.1}", gamma), |b| {
             b.iter(|| {
                 for item in items.iter().take(query_n) {
                     black_box(mphf.get(item).unwrap());
@@ -64,7 +64,7 @@ pub fn benchmark(c: &mut Criterion) {
 
         let rkyv_mphf = rkyv::access::<ArchivedMphf<32, 8>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
 
-        group.bench_function(format!("archived get gamma {:.1}", gamma), |b| {
+        group.bench_function(format!("archived get gamma: {:.1}", gamma), |b| {
             b.iter(|| {
                 for item in items.iter().take(query_n) {
                     black_box(rkyv_mphf.get(item).unwrap());

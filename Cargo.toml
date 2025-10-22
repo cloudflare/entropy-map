@@ -27,7 +27,6 @@ paste = "1.0.14"
 proptest = "1.4.0"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
-rkyv = "0.8"
 rustc-hash = "2"
 test-case = "3.3.1"
 

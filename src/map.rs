@@ -335,7 +335,7 @@ mod tests {
     }
 
     #[test]
-    fn test_map_with_dict() {
+    fn test_map() {
         // Collect original key-value pairs directly into a HashMap
         let original_map = gen_map(1000);
 
@@ -428,13 +428,13 @@ mod tests {
         assert!(!rkyv_map.contains_key("c"));
     }
 
-    macro_rules! proptest_map_with_dict_model {
+    macro_rules! proptest_map_model {
         ($(($b:expr, $s:expr, $gamma:expr)),* $(,)?) => {
             $(
                 paste! {
                     proptest! {
                         #[test]
-                        fn [<proptest_map_with_dict_model_ $b _ $s _ $gamma>](model: HashMap<u64, u64>, arbitrary: HashSet<u64>) {
+                        fn [<proptest_map_model_ $b _ $s _ $gamma>](model: HashMap<u64, u64>, arbitrary: HashSet<u64>) {
                             let entropy_map: Map<u64, u64, $b, $s> = Map::from_iter_with_params(
                                 model.clone(),
                                 $gamma as f32 / 100.0
@@ -475,7 +475,7 @@ mod tests {
         };
     }
 
-    proptest_map_with_dict_model!(
+    proptest_map_model!(
         // (1, 8, 100),
         (2, 8, 100),
         (4, 8, 100),

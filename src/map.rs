@@ -35,6 +35,7 @@ where
     keys: Box<[K]>,
     /// Map values
     values: Box<[V]>,
+    // storage as tuple `Box<[(K, V)]>` works slower
 }
 
 impl<K, V, const B: usize, const S: usize, ST, H> Map<K, V, B, S, ST, H>

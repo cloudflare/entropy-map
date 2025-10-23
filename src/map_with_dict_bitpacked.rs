@@ -24,7 +24,7 @@ use wyhash::WyHash;
 
 use crate::{
     mphf::{Mphf, DEFAULT_GAMMA},
-    GroupSeed,
+    IntoGroupSeed,
 };
 
 /// An efficient, immutable hash map with bit-packed `Vec<u32>` values for optimized space usage.
@@ -57,7 +57,7 @@ pub enum Error {
 impl<K, const B: usize, const S: usize, ST, H> MapWithDictBitpacked<K, B, S, ST, H>
 where
     K: Hash,
-    ST: PrimInt + Unsigned + GroupSeed,
+    ST: PrimInt + Unsigned + IntoGroupSeed,
     H: Hasher + Default,
 {
     /// Constructs a `MapWithDictBitpacked` from an iterator of key-value pairs and MPHF function params.
@@ -360,7 +360,7 @@ where
     K: PartialEq + Hash + rkyv::Archive,
     K::Archived: PartialEq<K>,
     ST: PrimInt + Unsigned + rkyv::Archive,
-    <ST as rkyv::Archive>::Archived: GroupSeed + Copy,
+    <ST as rkyv::Archive>::Archived: IntoGroupSeed,
     H: Hasher + Default,
 {
     /// Updates `values` to the array of values corresponding to the key. Returns `false` if the

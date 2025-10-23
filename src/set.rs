@@ -22,7 +22,7 @@ use wyhash::WyHash;
 
 use crate::{
     mphf::{Mphf, MphfError, DEFAULT_GAMMA},
-    GroupSeed,
+    IntoGroupSeed,
 };
 
 /// An efficient, immutable set.
@@ -42,7 +42,7 @@ where
 impl<K, const B: usize, const S: usize, ST, H> Set<K, B, S, ST, H>
 where
     K: Eq + Hash,
-    ST: PrimInt + Unsigned + GroupSeed,
+    ST: PrimInt + Unsigned + IntoGroupSeed,
     H: Hasher + Default,
 {
     /// Constructs a `Set` from an iterator of keys and MPHF function parameters.
@@ -180,7 +180,7 @@ where
     K: Eq + Hash + rkyv::Archive,
     K::Archived: PartialEq<K>,
     ST: PrimInt + Unsigned + rkyv::Archive,
-    <ST as rkyv::Archive>::Archived: GroupSeed + Copy,
+    <ST as rkyv::Archive>::Archived: IntoGroupSeed,
     H: Hasher + Default,
 {
     /// Returns `true` if the set contains the value.

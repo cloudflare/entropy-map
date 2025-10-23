@@ -18,7 +18,7 @@ use wyhash::WyHash;
 
 use crate::{
     mphf::{Mphf, MphfError, DEFAULT_GAMMA},
-    GroupSeed,
+    IntoGroupSeed,
 };
 
 /// An efficient, immutable hash map.
@@ -40,7 +40,7 @@ where
 impl<K, V, const B: usize, const S: usize, ST, H> Map<K, V, B, S, ST, H>
 where
     K: Hash,
-    ST: PrimInt + Unsigned + GroupSeed,
+    ST: PrimInt + Unsigned + IntoGroupSeed,
     H: Hasher + Default,
 {
     /// Constructs a `Map` from an iterator of key-value pairs and MPHF function params.
@@ -242,7 +242,7 @@ where
     K::Archived: PartialEq<K>,
     V: rkyv::Archive,
     ST: PrimInt + Unsigned + rkyv::Archive,
-    <ST as rkyv::Archive>::Archived: GroupSeed + Copy,
+    <ST as rkyv::Archive>::Archived: IntoGroupSeed,
     H: Hasher + Default,
 {
     /// Checks if the map contains the specified key.

@@ -19,7 +19,7 @@ use wyhash::WyHash;
 
 use crate::{
     mphf::{Mphf, MphfError, DEFAULT_GAMMA},
-    GroupSeed,
+    IntoGroupSeed,
 };
 
 /// An efficient, immutable hash map with values dictionary-packed for optimized space usage.
@@ -46,7 +46,7 @@ impl<K, V, const B: usize, const S: usize, ST, H> MapWithDict<K, V, B, S, ST, H>
 where
     K: Hash,
     V: Eq + Clone + Hash,
-    ST: PrimInt + Unsigned + GroupSeed,
+    ST: PrimInt + Unsigned + IntoGroupSeed,
     H: Hasher + Default,
 {
     /// Constructs a `MapWithDict` from an iterator of key-value pairs and MPHF function params.
@@ -280,7 +280,7 @@ where
     K::Archived: PartialEq<K>,
     V: rkyv::Archive,
     ST: PrimInt + Unsigned + rkyv::Archive,
-    <ST as rkyv::Archive>::Archived: GroupSeed + Copy,
+    <ST as rkyv::Archive>::Archived: IntoGroupSeed,
     H: Hasher + Default,
 {
     /// Checks if the map contains the specified key.

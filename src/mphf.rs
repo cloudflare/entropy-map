@@ -22,7 +22,7 @@ use wyhash::WyHash;
 use crate::{
     mphf::MphfError::*,
     rank::{RankedBits, RankedBitsAccess},
-    GroupSeed,
+    IntoGroupSeed,
 };
 
 /// A Minimal Perfect Hash Function (MPHF).
@@ -75,6 +75,7 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
     };
 
     /// Initializes `Mphf` using slice of `keys` and parameter `gamma`.
+    #[inline]
     pub fn from_slice<K: Hash>(keys: &[K], gamma: f32) -> Result<Self, MphfError> {
         Self::from_iter(keys.iter(), gamma)
     }
@@ -249,7 +250,7 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
     #[inline]
     pub fn get<K: Hash + ?Sized>(&self, key: &K) -> Option<usize>
     where
-        ST: GroupSeed + Copy,
+        ST: IntoGroupSeed,
     {
         Self::get_impl(
             key,
@@ -262,7 +263,7 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
     /// Inner implementation of `get` with `level_groups`, `group_seeds` and `ranked_bits` passed
     /// from standard and `Archived` version of `Mphf`.
     #[inline]
-    fn get_impl<K: Hash + ?Sized, GS: GroupSeed + Copy>(
+    fn get_impl<K: Hash + ?Sized, GS: IntoGroupSeed>(
         key: &K,
         level_groups: impl Iterator<Item = u32>,
         group_seeds: &[GS],
@@ -334,7 +335,7 @@ fn fastmod32(x: u32, n: u32) -> usize {
 impl<const B: usize, const S: usize, ST, H> ArchivedMphf<B, S, ST, H>
 where
     ST: PrimInt + Unsigned + rkyv::Archive,
-    <ST as rkyv::Archive>::Archived: GroupSeed + Copy,
+    <ST as rkyv::Archive>::Archived: IntoGroupSeed,
     H: Hasher + Default,
 {
     #[inline]

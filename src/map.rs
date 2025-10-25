@@ -223,8 +223,7 @@ where
 /// Creates a `Map` from a `HashMap`.
 impl<K, V, B> TryFrom<HashMap<K, V, B>> for Map<K, V>
 where
-    K: Eq + Hash + Clone,
-    V: Eq + Clone + Hash,
+    K: Hash,
     B: BuildHasher,
 {
     type Error = MphfError;

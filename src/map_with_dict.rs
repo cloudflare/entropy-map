@@ -260,7 +260,7 @@ where
 /// Creates a `MapWithDict` from a `HashMap`.
 impl<K, V, B> TryFrom<HashMap<K, V, B>> for MapWithDict<K, V>
 where
-    K: Eq + Hash + Clone,
+    K: Hash,
     V: Eq + Clone + Hash,
     B: BuildHasher,
 {

@@ -293,7 +293,7 @@ where
 /// Creates a `MapWithDictBitpacked` from a `HashMap`.
 impl<K, B> TryFrom<HashMap<K, Vec<u32>, B>> for MapWithDictBitpacked<K>
 where
-    K: PartialEq + Hash + Clone,
+    K: Hash,
     B: BuildHasher,
 {
     type Error = Error;

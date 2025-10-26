@@ -10,6 +10,7 @@
 //! but prioritizes code simplicity and portability, with a special focus on optimizing the rank
 //! storage mechanism and reducing the construction time and querying latency of MPHF.
 
+use core::fmt;
 use std::{
     hash::{Hash, Hasher},
     marker::PhantomData,
@@ -51,13 +52,25 @@ const MAX_LEVELS: usize = 64;
 /// Errors that can occur when initializing `Mphf`.
 #[derive(Debug)]
 pub enum MphfError {
-    /// Error when the maximum number of levels is exceeded during initialization.
-    MaxLevelsExceeded,
-    /// Error when the seed type `ST` is too small to store `S` bits
-    InvalidSeedType,
     /// Error when the `gamma` parameter is less than 1.0.
     InvalidGammaParameter,
+    /// Error when the seed type `ST` is too small to store `S` bits
+    InvalidSeedType,
+    /// Error when the maximum number of levels is exceeded during initialization.
+    MaxLevelsExceeded,
 }
+
+impl fmt::Display for MphfError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::InvalidGammaParameter => write!(f, "the `gamma` parameter is less than 1.0"),
+            Self::InvalidSeedType => write!(f, "the seed type `ST` is too small to store `S` bits"),
+            Self::MaxLevelsExceeded => write!(f, "the maximum number of levels is exceeded during initialization"),
+        }
+    }
+}
+
+impl std::error::Error for MphfError {}
 
 /// Default `gamma` parameter for MPHF.
 pub const DEFAULT_GAMMA: f32 = 2.0;

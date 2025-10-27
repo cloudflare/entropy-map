@@ -31,11 +31,7 @@ where
 {
     /// Minimally Perfect Hash Function for keys indices retrieval
     mphf: Mphf<B, S, ST, H>,
-    /// Map keys
-    keys: Box<[K]>,
-    /// Map values
-    values: Box<[V]>,
-    // storage as tuple `Box<[(K, V)]>` works slower
+    keys_vals: Box<[(K, V)]>,
 }
 
 impl<K, V, const B: usize, const S: usize, ST, H> Map<K, V, B, S, ST, H>
@@ -49,29 +45,22 @@ where
     where
         I: IntoIterator<Item = (K, V)>,
     {
-        let mut keys = vec![];
-        let mut values = vec![];
+        let mut keys_vals: Vec<_> = iter.into_iter().collect();
 
-        for (k, v) in iter {
-            keys.push(k);
-            values.push(v);
-        }
-
-        let mphf = Mphf::from_slice(&keys, gamma)?;
+        let mphf = Mphf::from_iter(keys_vals.iter().map(|(k, _v)| k), gamma)?;
 
         // Re-order `keys` and `values_index` according to `mphf`
-        for i in 0..keys.len() {
+        for i in 0..keys_vals.len() {
             loop {
-                let idx = mphf.get(&keys[i]).unwrap();
+                let idx = mphf.get(&keys_vals[i].0).unwrap();
                 if idx == i {
                     break;
                 }
-                keys.swap(i, idx);
-                values.swap(i, idx);
+                keys_vals.swap(i, idx);
             }
         }
 
-        Ok(Self { mphf, keys: keys.into_boxed_slice(), values: values.into_boxed_slice() })
+        Ok(Self { mphf, keys_vals: keys_vals.into_boxed_slice() })
     }
 
     /// Returns a reference to the value corresponding to the key. Returns `None` if the key is
@@ -95,8 +84,9 @@ where
 
         // SAFETY: `idx` is always within bounds (ensured during construction)
         unsafe {
-            if self.keys.get_unchecked(idx) == key {
-                Some(self.values.get_unchecked(idx))
+            let (k, v) = self.keys_vals.get_unchecked(idx);
+            if k == key {
+                Some(v)
             } else {
                 None
             }
@@ -114,7 +104,7 @@ where
     /// ```
     #[inline]
     pub fn len(&self) -> usize {
-        self.keys.len()
+        self.keys_vals.len()
     }
 
     /// Returns `true` if the map contains no elements.
@@ -130,7 +120,7 @@ where
     /// ```
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.keys.is_empty()
+        self.keys_vals.is_empty()
     }
 
     /// Checks if the map contains the specified key.
@@ -151,7 +141,7 @@ where
     {
         if let Some(idx) = self.mphf.get(key) {
             // SAFETY: `idx` is always within bounds (ensured during construction)
-            unsafe { self.keys.get_unchecked(idx) == key }
+            unsafe { &self.keys_vals.get_unchecked(idx).0 == key }
         } else {
             false
         }
@@ -169,8 +159,8 @@ where
     /// }
     /// ```
     #[inline]
-    pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
-        self.keys.iter().zip(self.values.iter())
+    pub fn iter(&self) -> impl Iterator<Item = &(K, V)> {
+        self.keys_vals.iter()
     }
 
     /// Returns an iterator over the keys of the map.
@@ -186,7 +176,7 @@ where
     /// ```
     #[inline]
     pub fn keys(&self) -> impl Iterator<Item = &K> {
-        self.keys.iter()
+        self.keys_vals.iter().map(|(k, _v)| k)
     }
 
     /// Returns an iterator over the values of the map.
@@ -202,7 +192,7 @@ where
     /// ```
     #[inline]
     pub fn values(&self) -> impl Iterator<Item = &V> {
-        self.values.iter()
+        self.keys_vals.iter().map(|(_k, v)| v)
     }
 
     /// Returns the total number of bytes occupied by the structure.
@@ -212,11 +202,11 @@ where
     /// # use std::collections::HashMap;
     /// # use entropy_map::Map;
     /// let map = Map::try_from(HashMap::from([(1, 2), (3, 4)])).unwrap();
-    /// assert_eq!(map.size(), 238);
+    /// assert_eq!(map.size(), 222);
     /// ```
     #[inline]
     pub fn size(&self) -> usize {
-        size_of_val(self) + self.mphf.size() + size_of_val(self.keys.as_ref()) + size_of_val(self.values.as_ref())
+        size_of_val(self) + self.mphf.size() + size_of_val(self.keys_vals.as_ref())
     }
 }
 
@@ -267,7 +257,9 @@ where
     {
         if let Some(idx) = self.mphf.get(key) {
             // SAFETY: `idx` is always within bounds (ensured during construction)
-            unsafe { self.keys.get_unchecked(idx) == key }
+            let rkyv::tuple::ArchivedTuple2(k, _v) = unsafe { self.keys_vals.get_unchecked(idx) };
+
+            k == key
         } else {
             false
         }
@@ -298,8 +290,9 @@ where
 
         // SAFETY: `idx` is always within bounds (ensured during construction)
         unsafe {
-            if self.keys.get_unchecked(idx) == key {
-                Some(self.values.get_unchecked(idx))
+            let rkyv::tuple::ArchivedTuple2(k, v) = self.keys_vals.get_unchecked(idx);
+            if k == key {
+                Some(v)
             } else {
                 None
             }
@@ -308,20 +301,20 @@ where
 
     /// Returns an iterator over the archived map, yielding archived key-value pairs.
     #[inline]
-    pub fn iter(&self) -> impl Iterator<Item = (&K::Archived, &V::Archived)> {
-        self.keys.iter().zip(self.values.iter())
+    pub fn iter(&self) -> impl Iterator<Item = &<(K, V) as rkyv::Archive>::Archived> {
+        self.keys_vals.iter()
     }
 
     /// Returns the number of key-value pairs in the map.
     #[inline]
     pub fn len(&self) -> usize {
-        self.keys.len()
+        self.keys_vals.len()
     }
 
     /// Returns `true` if the map contains no elements.
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.keys.is_empty()
+        self.keys_vals.is_empty()
     }
 }
 
@@ -367,8 +360,8 @@ mod tests {
         }
 
         // Test iter
-        for (&k, &v) in map.iter() {
-            assert_eq!(original_map.get(&k), Some(&v));
+        for (k, v) in map.iter() {
+            assert_eq!(original_map.get(k), Some(v));
         }
 
         // Test keys
@@ -382,7 +375,7 @@ mod tests {
         }
 
         // Test size
-        assert_eq!(map.size(), 12546);
+        assert_eq!(map.size(), 16530);
     }
 
     /// Assert that we can call `.get()` with `K::borrow()`.
@@ -408,7 +401,7 @@ mod tests {
         let map: Map<u64, u32, 64, 16, u16> = Map::from_iter_with_params(original_map.clone(), DEFAULT_GAMMA).unwrap();
         let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&map).unwrap();
 
-        assert_eq!(rkyv_bytes.len(), 12408);
+        assert_eq!(rkyv_bytes.len(), 16424);
 
         let rkyv_map = rkyv::access::<ArchivedMap<u64, u32, 64, 16, u16>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
 
@@ -418,7 +411,7 @@ mod tests {
         }
 
         // Test iter on `Archived` version
-        for (k, v) in rkyv_map.iter() {
+        for rkyv::tuple::ArchivedTuple2(k, v) in rkyv_map.iter() {
             assert_eq!(original_map.get(&k.to_native()), Some(&v.to_native()));
         }
     }

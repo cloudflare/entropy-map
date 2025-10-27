@@ -8,25 +8,25 @@ use rand_chacha::ChaCha8Rng;
 
 /// Benchmark results for N = 1M:
 ///
-/// Map construction took: 14.06023608s
+/// Map construction took: 13.64868523s
 ///
 /// Map/HashMap get
 /// time:   [18.350 ms 18.518 ms 18.707 ms]
 /// thrpt:  [53.455 Melem/s 54.001 Melem/s 54.496 Melem/s]
 ///
 /// Map/entropy get
-/// time:   [29.678 ms 29.985 ms 30.320 ms]
-/// thrpt:  [32.982 Melem/s 33.350 Melem/s 33.695 Melem/s]
+/// time:   [37.033 ms 37.293 ms 37.613 ms]
+/// thrpt:  [26.587 Melem/s 26.815 Melem/s 27.003 Melem/s]
 /// 
 /// Map/HashMap archived get
 /// time:   [37.152 ms 37.373 ms 37.712 ms]
 /// thrpt:  [26.517 Melem/s 26.757 Melem/s 26.917 Melem/s]
 ///
-/// Map rkyv serialization took: 1.474797ms
+/// Map rkyv serialization took: 4.447392ms
 ///
 /// Map/entropy archived get
-/// time:   [25.789 ms 26.182 ms 26.617 ms]
-/// thrpt:  [37.570 Melem/s 38.194 Melem/s 38.776 Melem/s]
+/// time:   [40.613 ms 41.039 ms 41.563 ms]
+/// thrpt:  [24.060 Melem/s 24.367 Melem/s 24.623 Melem/s]
 pub fn benchmark(c: &mut Criterion) {
     let n: usize = env::var("N").unwrap_or("1000000".to_string()).parse().unwrap();
     let query_n: usize = env::var("QN").unwrap_or("1000000".to_string()).parse().unwrap();

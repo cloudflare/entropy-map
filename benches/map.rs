@@ -17,6 +17,10 @@ use rand_chacha::ChaCha8Rng;
 /// Map/entropy get
 /// time:   [29.678 ms 29.985 ms 30.320 ms]
 /// thrpt:  [32.982 Melem/s 33.350 Melem/s 33.695 Melem/s]
+/// 
+/// Map/HashMap archived get
+/// time:   [37.152 ms 37.373 ms 37.712 ms]
+/// thrpt:  [26.517 Melem/s 26.757 Melem/s 26.917 Melem/s]
 ///
 /// Map rkyv serialization took: 1.474797ms
 ///
@@ -59,6 +63,21 @@ pub fn benchmark(c: &mut Criterion) {
         b.iter(|| {
             for key in original_map.keys().take(query_n) {
                 black_box(map.get(key).unwrap());
+            }
+        });
+    });
+
+    let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&hash_map).unwrap();
+    let rkyv_hash_map = rkyv::access::<
+        rkyv::collections::swiss_table::map::ArchivedHashMap<u64, u32>,
+        rkyv::rancor::Error,
+    >(&rkyv_bytes)
+    .unwrap();
+
+    group.bench_function("HashMap archived get", |b| {
+        b.iter(|| {
+            for key in original_map.keys().take(query_n) {
+                black_box(rkyv_hash_map.get(key).unwrap());
             }
         });
     });

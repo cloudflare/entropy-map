@@ -311,6 +311,18 @@ where
     pub fn iter(&self) -> impl Iterator<Item = (&K::Archived, &V::Archived)> {
         self.keys.iter().zip(self.values.iter())
     }
+
+    /// Returns the number of key-value pairs in the map.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.keys.len()
+    }
+
+    /// Returns `true` if the map contains no elements.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.keys.is_empty()
+    }
 }
 
 #[cfg(test)]

@@ -5,6 +5,8 @@
 
 use std::mem::size_of_val;
 
+use crate::IntoRankBits;
+
 /// Size of the L2 block in bits.
 const L2_BIT_SIZE: usize = 512;
 /// Size of the L1 block in bits, calculated as a multiple of the L2 block size.
@@ -24,10 +26,10 @@ pub trait RankedBitsAccess {
     /// This method is unsafe because `idx` must be within the bounds of the bits stored in `RankedBitsAccess`.
     /// An index out of bounds can lead to undefined behavior.
     #[inline]
-    unsafe fn rank_impl<T: L12RankAccess>(bits: &[u64], l12_ranks: &T, idx: usize) -> Option<usize> {
+    unsafe fn rank_impl<T: L12RankAccess, B: IntoRankBits>(bits: &[B], l12_ranks: &T, idx: usize) -> Option<usize> {
         let word_idx = idx / 64;
         let bit_idx = idx % 64;
-        let word = *bits.get_unchecked(word_idx);
+        let word = bits.get_unchecked(word_idx).into_u64();
 
         if (word & (1u64 << bit_idx)) == 0 {
             return None;
@@ -41,9 +43,9 @@ pub trait RankedBitsAccess {
         let offset = (idx / L2_BIT_SIZE) * 8;
         let block = bits.get_unchecked(offset..offset + blocks_num);
 
-        let block_rank = block.iter().map(|&x| x.count_ones() as usize).sum::<usize>();
+        let block_rank = block.iter().map(|&x| x.into_u64().count_ones() as usize).sum::<usize>();
 
-        let word = *bits.get_unchecked(offset + blocks_num);
+        let word = bits.get_unchecked(offset + blocks_num).into_u64();
         let word_mask = ((1u64 << (idx_within_l2 % 64)) - 1) * (idx_within_l2 > 0) as u64;
         let word_rank = (word & word_mask).count_ones() as usize;
 
@@ -56,7 +58,6 @@ pub trait RankedBitsAccess {
 
 #[derive(Debug, Default)]
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
-#[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
 pub struct RankedBits {
     /// The bit vector represented as an array of u64 integers.
     bits: Box<[u64]>,
@@ -70,7 +71,6 @@ pub struct RankedBits {
 /// See https://github.com/rkyv/rkyv/issues/409 for more details.
 #[derive(Debug)]
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
-#[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
 pub struct L12Rank([u8; 16]);
 
 /// Trait used to access archived and non-archived L1 and L2 ranks
@@ -141,7 +141,7 @@ impl RankedBits {
             l12_ranks.push(l12_rank.into());
         }
 
-        RankedBits { bits, l12_ranks: l12_ranks.into_boxed_slice() }
+        Self { bits, l12_ranks: l12_ranks.into_boxed_slice() }
     }
 
     /// Returns the total number of bytes occupied by `RankedBits`
@@ -163,17 +163,15 @@ impl RankedBitsAccess for RankedBits {
 impl RankedBitsAccess for ArchivedRankedBits {
     #[inline]
     fn rank(&self, idx: usize) -> Option<usize> {
-        unsafe { Self::rank_impl(&self.bits, &self.l12_ranks, idx) }
+        unsafe { Self::rank_impl(self.bits.get(), &self.l12_ranks, idx) }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitvec::order::Lsb0;
-    use bitvec::vec::BitVec;
-    use rand::distributions::Standard;
-    use rand::Rng;
+    use bitvec::{order::Lsb0, vec::BitVec};
+    use rand::{distributions::Standard, Rng};
 
     #[test]
     fn test_rank_and_get() {

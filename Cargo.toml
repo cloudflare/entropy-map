@@ -16,24 +16,23 @@ categories = ["algorithms", "data-structures"]
 
 [dependencies]
 bitpacking = "0.9.2"
-bytecheck = { version = "~0.6.8", default-features = false, optional = true }
 num = "0.4.1"
-rkyv = { version = "0.7.42", features = ["validation", "strict"], optional = true }
-wyhash = "0.5.0"
+rkyv = { version = "0.8", optional = true }
+wyhash = "0.6"
 
 [dev-dependencies]
 bitvec = "1.0.1"
-criterion = { version = "0.5.1", features = ["html_reports"] }
+criterion = { version = "0.7", features = ["html_reports"] }
 paste = "1.0.14"
 proptest = "1.4.0"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
-rkyv = { version = "0.7.42", features = ["validation", "strict"] }
+rustc-hash = "2"
 test-case = "3.3.1"
 
 [features]
 default = []
-rkyv_derive = ["rkyv", "bytecheck"]
+rkyv_derive = ["rkyv"]
 
 [[bench]]
 name = "rank"
@@ -41,6 +40,11 @@ harness = false
 
 [[bench]]
 name = "mphf"
+harness = false
+required-features = ["rkyv_derive"]
+
+[[bench]]
+name = "map"
 harness = false
 required-features = ["rkyv_derive"]
 
@@ -59,11 +63,8 @@ name = "set"
 harness = false
 required-features = ["rkyv_derive"]
 
-[profile.bench]
-debug = true
-
-[profile.release]
-codegen-units = 1
-debug = true
-lto = "fat"
-opt-level = 3
+# [profile.release]
+# codegen-units = 1
+# debug = true
+# lto = "fat"
+# opt-level = 3

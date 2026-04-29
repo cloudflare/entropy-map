@@ -10,20 +10,24 @@
 //! dynamically update membership. However, when the `rkyv_derive` feature is enabled, you can use
 //! [`rkyv`](https://rkyv.org/) to perform zero-copy deserialization of a new set.
 
-use std::borrow::Borrow;
-use std::collections::HashSet;
-use std::hash::{Hash, Hasher};
-use std::mem::size_of_val;
+use std::{
+    borrow::Borrow,
+    collections::HashSet,
+    hash::{Hash, Hasher},
+    mem::size_of_val,
+};
 
 use num::{PrimInt, Unsigned};
 use wyhash::WyHash;
 
-use crate::mphf::{Mphf, MphfError, DEFAULT_GAMMA};
+use crate::{
+    mphf::{Mphf, MphfError, DEFAULT_GAMMA},
+    IntoGroupSeed,
+};
 
 /// An efficient, immutable set.
 #[derive(Default)]
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
-#[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
 pub struct Set<K, const B: usize = 32, const S: usize = 8, ST = u8, H = WyHash>
 where
     ST: PrimInt + Unsigned,
@@ -38,7 +42,7 @@ where
 impl<K, const B: usize, const S: usize, ST, H> Set<K, B, S, ST, H>
 where
     K: Eq + Hash,
-    ST: PrimInt + Unsigned,
+    ST: PrimInt + Unsigned + IntoGroupSeed,
     H: Hasher + Default,
 {
     /// Constructs a `Set` from an iterator of keys and MPHF function parameters.
@@ -69,7 +73,7 @@ where
             }
         }
 
-        Ok(Set { mphf, keys: keys.into_boxed_slice() })
+        Ok(Self { mphf, keys: keys.into_boxed_slice() })
     }
 
     /// Returns `true` if the set contains the value.
@@ -175,7 +179,8 @@ impl<K, const B: usize, const S: usize, ST, H> ArchivedSet<K, B, S, ST, H>
 where
     K: Eq + Hash + rkyv::Archive,
     K::Archived: PartialEq<K>,
-    ST: PrimInt + Unsigned + rkyv::Archive<Archived = ST>,
+    ST: PrimInt + Unsigned + rkyv::Archive,
+    <ST as rkyv::Archive>::Archived: IntoGroupSeed,
     H: Hasher + Default,
 {
     /// Returns `true` if the set contains the value.
@@ -185,18 +190,17 @@ where
     /// # use std::collections::HashSet;
     /// # use entropy_map::{ArchivedSet, Set};
     /// let set: Set<u32> = Set::try_from(HashSet::from([1, 2, 3])).unwrap();
-    /// let archived_set = rkyv::from_bytes::<Set<u32>>(
-    ///     &rkyv::to_bytes::<_, 1024>(&set).unwrap()
-    /// ).unwrap();
+    /// let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&set).unwrap();
+    /// let archived_set = rkyv::access::<ArchivedSet<u32>, rkyv::rancor::Error>(&bytes).unwrap();
     /// assert_eq!(archived_set.contains(&1), true);
     /// assert_eq!(archived_set.contains(&4), false);
     /// ```
     #[inline]
-    pub fn contains<Q: ?Sized>(&self, key: &Q) -> bool
+    pub fn contains<Q>(&self, key: &Q) -> bool
     where
         K: Borrow<Q>,
         <K as rkyv::Archive>::Archived: PartialEq<Q>,
-        Q: Hash + Eq,
+        Q: Hash + Eq + ?Sized,
     {
         // SAFETY: `idx` is always within bounds (ensured during construction)
         self.mphf
@@ -264,11 +268,11 @@ mod tests {
         // create regular `HashSet`, then `Set`, then serialize to `rkyv` bytes.
         let original_set = gen_set(1000);
         let set = Set::try_from(original_set.clone()).unwrap();
-        let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&set).unwrap();
+        let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&set).unwrap();
 
         assert_eq!(rkyv_bytes.len(), 8408);
 
-        let rkyv_set = rkyv::check_archived_root::<Set<u64>>(&rkyv_bytes).unwrap();
+        let rkyv_set = rkyv::access::<ArchivedSet<u64>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
 
         // Test get on `Archived` version
         for k in original_set.iter() {
@@ -280,8 +284,8 @@ mod tests {
     #[test]
     fn test_rkyv_contains_borrow() {
         let set = Set::try_from(HashSet::from(["a".to_string(), "b".to_string()])).unwrap();
-        let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&set).unwrap();
-        let rkyv_set = rkyv::check_archived_root::<Set<String>>(&rkyv_bytes).unwrap();
+        let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&set).unwrap();
+        let rkyv_set = rkyv::access::<ArchivedSet<String>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
 
         assert!(rkyv_set.contains("a"));
         assert!(rkyv_set.contains("b"));

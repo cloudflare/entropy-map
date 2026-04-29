@@ -11,21 +11,25 @@
 //! stored in the byte dictionary. Keys are maintained for validation during retrieval. A `get`
 //! query for a non-existent key at construction returns `false`, similar to `MapWithDict`.
 
-use std::borrow::Borrow;
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
-use std::mem::size_of_val;
+use std::{
+    borrow::Borrow,
+    collections::HashMap,
+    hash::{BuildHasher, Hash, Hasher},
+    mem::size_of_val,
+};
 
 use bitpacking::{BitPacker, BitPacker1x};
 use num::{PrimInt, Unsigned};
 use wyhash::WyHash;
 
-use crate::mphf::{Mphf, DEFAULT_GAMMA};
+use crate::{
+    mphf::{Mphf, DEFAULT_GAMMA},
+    IntoGroupSeed,
+};
 
 /// An efficient, immutable hash map with bit-packed `Vec<u32>` values for optimized space usage.
 #[derive(Default)]
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
-#[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
 pub struct MapWithDictBitpacked<K, const B: usize = 32, const S: usize = 8, ST = u8, H = WyHash>
 where
     ST: PrimInt + Unsigned,
@@ -52,8 +56,8 @@ pub enum Error {
 
 impl<K, const B: usize, const S: usize, ST, H> MapWithDictBitpacked<K, B, S, ST, H>
 where
-    K: Hash + PartialEq + Clone,
-    ST: PrimInt + Unsigned,
+    K: Hash,
+    ST: PrimInt + Unsigned + IntoGroupSeed,
     H: Hasher + Default,
 {
     /// Constructs a `MapWithDictBitpacked` from an iterator of key-value pairs and MPHF function params.
@@ -70,7 +74,7 @@ where
         let v_len = iter.peek().map_or(0, |(_, v)| v.len());
 
         for (k, v) in iter {
-            keys.push(k.clone());
+            keys.push(k);
 
             if v.len() != v_len {
                 return Err(Error::NotEqualValuesLengths);
@@ -80,13 +84,14 @@ where
                 // re-use dictionary offset if found in cache
                 values_index.push(offset);
             } else {
-                // store current dictionary length as an offset in both index and cache
                 let offset = values_dict.len();
-                offsets_cache.insert(v.clone(), offset);
-                values_index.push(offset);
 
                 // append packed values to the dictionary
                 pack_values(&v, &mut values_dict);
+
+                // store dictionary length as an offset in both index and cache
+                offsets_cache.insert(v, offset);
+                values_index.push(offset);
             }
         }
 
@@ -139,13 +144,12 @@ where
             None => return false,
         };
 
-        // SAFETY: `idx` is always within bounds (ensured during construction)
+        // SAFETY: `idx` and `value_idx` are always within bounds (ensured during construction)
         unsafe {
             if self.keys.get_unchecked(idx) != key {
                 return false;
             }
 
-            // SAFETY: `idx` and `value_idx` are always within bounds (ensure during construction)
             let value_idx = *self.values_index.get_unchecked(idx);
             let dict = self.values_dict.get_unchecked(value_idx..);
             unpack_values(dict, values);
@@ -287,14 +291,15 @@ where
 }
 
 /// Creates a `MapWithDictBitpacked` from a `HashMap`.
-impl<K> TryFrom<HashMap<K, Vec<u32>>> for MapWithDictBitpacked<K>
+impl<K, B> TryFrom<HashMap<K, Vec<u32>, B>> for MapWithDictBitpacked<K>
 where
-    K: PartialEq + Hash + Clone,
+    K: Hash,
+    B: BuildHasher,
 {
     type Error = Error;
 
     #[inline]
-    fn try_from(value: HashMap<K, Vec<u32>>) -> Result<Self, Self::Error> {
+    fn try_from(value: HashMap<K, Vec<u32>, B>) -> Result<Self, Self::Error> {
         MapWithDictBitpacked::from_iter_with_params(value, DEFAULT_GAMMA)
     }
 }
@@ -354,7 +359,8 @@ impl<K, const B: usize, const S: usize, ST, H> ArchivedMapWithDictBitpacked<K, B
 where
     K: PartialEq + Hash + rkyv::Archive,
     K::Archived: PartialEq<K>,
-    ST: PrimInt + Unsigned + rkyv::Archive<Archived = ST>,
+    ST: PrimInt + Unsigned + rkyv::Archive,
+    <ST as rkyv::Archive>::Archived: IntoGroupSeed,
     H: Hasher + Default,
 {
     /// Updates `values` to the array of values corresponding to the key. Returns `false` if the
@@ -363,11 +369,11 @@ where
     /// # Examples
     /// ```
     /// # use std::collections::HashMap;
+    /// # use entropy_map::ArchivedMapWithDictBitpacked;
     /// # use entropy_map::MapWithDictBitpacked;
     /// let map = MapWithDictBitpacked::try_from(HashMap::from([(1, vec![2]), (3, vec![4])])).unwrap();
-    /// let archived_map = rkyv::from_bytes::<MapWithDictBitpacked<u32>>(
-    ///     &rkyv::to_bytes::<_, 1024>(&map).unwrap()
-    /// ).unwrap();
+    /// let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&map).unwrap();
+    /// let archived_map = rkyv::access::<ArchivedMapWithDictBitpacked<u32>, rkyv::rancor::Error>(&bytes).unwrap();
     /// let mut values = [0];
     /// assert_eq!(archived_map.get_values(&1, &mut values), true);
     /// assert_eq!(values, [2]);
@@ -380,14 +386,13 @@ where
             None => return false,
         };
 
-        // SAFETY: `idx` is always within bounds (ensured during construction)
+        // SAFETY: `idx` and `value_idx` are always within bounds (ensured during construction)
         unsafe {
             if self.keys.get_unchecked(idx) != key {
                 return false;
             }
 
-            // SAFETY: `idx` and `value_idx` are always within bounds (ensure during construction)
-            let value_idx = *self.values_index.get_unchecked(idx) as usize;
+            let value_idx = self.values_index.get_unchecked(idx).to_native() as usize;
             let dict = self.values_dict.get_unchecked(value_idx..);
             unpack_values(dict, values);
         }
@@ -544,11 +549,11 @@ mod tests {
         let values_num = 10;
         let original_map = gen_map(items_num, values_num);
         let map = MapWithDictBitpacked::try_from(original_map.clone()).unwrap();
-        let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&map).unwrap();
+        let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&map).unwrap();
 
         assert_eq!(rkyv_bytes.len(), 18516);
 
-        let rkyv_map = rkyv::check_archived_root::<MapWithDictBitpacked<u64>>(&rkyv_bytes).unwrap();
+        let rkyv_map = rkyv::access::<ArchivedMapWithDictBitpacked<u64>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
 
         // Test get_values on `Archived` version of `MapWithDictBitpacked`
         let mut values_buf = vec![0; values_num];

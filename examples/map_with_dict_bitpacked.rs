@@ -23,9 +23,11 @@ fn main() {
 
     #[cfg(feature = "rkyv_derive")]
     {
+        use entropy_map::ArchivedMapWithDictBitpacked;
+
         // Serialize map to rkyv and test again
-        let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&map).unwrap();
-        let rkyv_map = rkyv::check_archived_root::<MapWithDictBitpacked<u64>>(&rkyv_bytes).unwrap();
+        let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&map).unwrap();
+        let rkyv_map = rkyv::access::<ArchivedMapWithDictBitpacked<u64>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
 
         assert!(rkyv_map.get_values(&1, &mut values_buf));
         assert_eq!(values_buf, vec![1, 2, 3]);

@@ -3,19 +3,28 @@
 //! This module implements a Minimal Perfect Hash Function (MPHF) based on fingerprinting techniques,
 //! as detailed in [Fingerprinting-based minimal perfect hashing revisited](https://doi.org/10.1145/3596453).
 //!
+//! If you query with keys that were not used at the time of construction, collisions can happen.
+//! Other structures are free of collisions, because they store `keys` and compare on each get.
+//!
 //! This implementation is inspired by existing Rust crate [ph](https://github.com/beling/bsuccinct-rs/tree/main/ph),
 //! but prioritizes code simplicity and portability, with a special focus on optimizing the rank
 //! storage mechanism and reducing the construction time and querying latency of MPHF.
 
-use std::hash::{Hash, Hasher};
-use std::marker::PhantomData;
-use std::mem::size_of_val;
+use core::fmt;
+use std::{
+    hash::{Hash, Hasher},
+    marker::PhantomData,
+    mem::size_of_val,
+};
 
 use num::{Integer, PrimInt, Unsigned};
 use wyhash::WyHash;
 
-use crate::mphf::MphfError::*;
-use crate::rank::{RankedBits, RankedBitsAccess};
+use crate::{
+    mphf::MphfError::*,
+    rank::{RankedBits, RankedBitsAccess},
+    IntoGroupSeed,
+};
 
 /// A Minimal Perfect Hash Function (MPHF).
 ///
@@ -26,7 +35,6 @@ use crate::rank::{RankedBits, RankedBitsAccess};
 /// - `H`: hasher used to hash keys, default `WyHash`.
 #[derive(Default)]
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
-#[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
 pub struct Mphf<const B: usize = 32, const S: usize = 8, ST: PrimInt + Unsigned = u8, H: Hasher + Default = WyHash> {
     /// Ranked bits for efficient rank queries
     ranked_bits: RankedBits,
@@ -44,13 +52,25 @@ const MAX_LEVELS: usize = 64;
 /// Errors that can occur when initializing `Mphf`.
 #[derive(Debug)]
 pub enum MphfError {
-    /// Error when the maximum number of levels is exceeded during initialization.
-    MaxLevelsExceeded,
-    /// Error when the seed type `ST` is too small to store `S` bits
-    InvalidSeedType,
     /// Error when the `gamma` parameter is less than 1.0.
     InvalidGammaParameter,
+    /// Error when the seed type `ST` is too small to store `S` bits
+    InvalidSeedType,
+    /// Error when the maximum number of levels is exceeded during initialization.
+    MaxLevelsExceeded,
 }
+
+impl fmt::Display for MphfError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::InvalidGammaParameter => write!(f, "the `gamma` parameter is less than 1.0"),
+            Self::InvalidSeedType => write!(f, "the seed type `ST` is too small to store `S` bits"),
+            Self::MaxLevelsExceeded => write!(f, "the maximum number of levels is exceeded during initialization"),
+        }
+    }
+}
+
+impl std::error::Error for MphfError {}
 
 /// Default `gamma` parameter for MPHF.
 pub const DEFAULT_GAMMA: f32 = 2.0;
@@ -68,7 +88,13 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
     };
 
     /// Initializes `Mphf` using slice of `keys` and parameter `gamma`.
+    #[inline]
     pub fn from_slice<K: Hash>(keys: &[K], gamma: f32) -> Result<Self, MphfError> {
+        Self::from_iter(keys.iter(), gamma)
+    }
+
+    /// Initializes `Mphf` using iter of `keys` and parameter `gamma`.
+    pub fn from_iter<'k, K: Hash + 'k>(keys_iter: impl Iterator<Item = &'k K>, gamma: f32) -> Result<Self, MphfError> {
         if gamma < 1.0 {
             return Err(InvalidGammaParameter);
         }
@@ -77,7 +103,7 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
             return Err(InvalidSeedType);
         }
 
-        let mut hashes: Vec<u64> = keys.iter().map(|key| hash_key::<H, _>(key)).collect();
+        let mut hashes: Vec<u64> = keys_iter.map(|key| hash_key::<H, _>(key)).collect();
         let mut group_bits = vec![];
         let mut group_seeds = vec![];
         let mut level_groups = vec![];
@@ -95,7 +121,7 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
             }
         }
 
-        Ok(Mphf {
+        Ok(Self {
             ranked_bits: RankedBits::new(group_bits.into_boxed_slice()),
             level_groups: level_groups.into_boxed_slice(),
             group_seeds: group_seeds.into_boxed_slice(),
@@ -235,25 +261,33 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
     /// Returns the index associated with `key`, within 0 to the key collection size (exclusive).
     /// If `key` was not in the initial collection, returns `None` or an arbitrary value from the range.
     #[inline]
-    pub fn get<K: Hash + ?Sized>(&self, key: &K) -> Option<usize> {
-        Self::get_impl(key, &self.level_groups, &self.group_seeds, &self.ranked_bits)
+    pub fn get<K: Hash + ?Sized>(&self, key: &K) -> Option<usize>
+    where
+        ST: IntoGroupSeed,
+    {
+        Self::get_impl(
+            key,
+            self.level_groups.iter().copied(),
+            &self.group_seeds,
+            &self.ranked_bits,
+        )
     }
 
     /// Inner implementation of `get` with `level_groups`, `group_seeds` and `ranked_bits` passed
     /// from standard and `Archived` version of `Mphf`.
     #[inline]
-    fn get_impl<K: Hash + ?Sized>(
+    fn get_impl<K: Hash + ?Sized, GS: IntoGroupSeed>(
         key: &K,
-        level_groups: &[u32],
-        group_seeds: &[ST],
+        level_groups: impl Iterator<Item = u32>,
+        group_seeds: &[GS],
         ranked_bits: &impl RankedBitsAccess,
     ) -> Option<usize> {
         let mut groups_before = 0;
-        for (level, &groups) in level_groups.iter().enumerate() {
+        for (level, groups) in level_groups.enumerate() {
             let level_hash = hash_with_seed(hash_key::<H, _>(key), level as u32);
             let group_idx = groups_before + fastmod32(level_hash as u32, groups);
             // SAFETY: `group_idx` is always within bounds (ensured during calculation)
-            let group_seed = unsafe { group_seeds.get_unchecked(group_idx).to_u32().unwrap() };
+            let group_seed = unsafe { group_seeds.get_unchecked(group_idx).into_u32() };
             let bit_idx = bit_index_for_seed::<B>(level_hash, group_seed, group_idx);
             if let Some(rank) = ranked_bits.rank(bit_idx) {
                 return Some(rank);
@@ -313,12 +347,18 @@ fn fastmod32(x: u32, n: u32) -> usize {
 #[cfg(feature = "rkyv_derive")]
 impl<const B: usize, const S: usize, ST, H> ArchivedMphf<B, S, ST, H>
 where
-    ST: PrimInt + Unsigned + rkyv::Archive<Archived = ST>,
+    ST: PrimInt + Unsigned + rkyv::Archive,
+    <ST as rkyv::Archive>::Archived: IntoGroupSeed,
     H: Hasher + Default,
 {
     #[inline]
     pub fn get<K: Hash + ?Sized>(&self, key: &K) -> Option<usize> {
-        Mphf::<B, S, ST, H>::get_impl(key, &self.level_groups, &self.group_seeds, &self.ranked_bits)
+        Mphf::<B, S, ST, H>::get_impl(
+            key,
+            self.level_groups.iter().map(|v| v.to_native()),
+            self.group_seeds.get(),
+            &self.ranked_bits,
+        )
     }
 }
 
@@ -412,11 +452,11 @@ mod tests {
         let n = 10000;
         let keys = (0..n as u64).collect::<Vec<u64>>();
         let mphf = Mphf::<32, 4>::from_slice(&keys, DEFAULT_GAMMA).expect("failed to create mphf");
-        let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&mphf).unwrap();
+        let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&mphf).unwrap();
 
-        assert_eq!(rkyv_bytes.len(), 3804);
+        assert_eq!(rkyv_bytes.len(), 3884);
 
-        let rkyv_mphf = rkyv::check_archived_root::<Mphf<32, 4>>(&rkyv_bytes).unwrap();
+        let rkyv_mphf = rkyv::access::<ArchivedMphf<32, 4>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
 
         // Ensure that all keys are assigned unique index which is less than `n`
         let mut set = HashSet::with_capacity(n);

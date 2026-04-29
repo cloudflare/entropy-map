@@ -20,9 +20,11 @@ fn main() {
 
     #[cfg(feature = "rkyv_derive")]
     {
+        use entropy_map::ArchivedMapWithDict;
+
         // Serialize map to rkyv and test again
-        let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&map).unwrap();
-        let rkyv_map = rkyv::check_archived_root::<MapWithDict<u64, String>>(&rkyv_bytes).unwrap();
+        let rkyv_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&map).unwrap();
+        let rkyv_map = rkyv::access::<ArchivedMapWithDict<u64, String>, rkyv::rancor::Error>(&rkyv_bytes).unwrap();
 
         assert_eq!(rkyv_map.get(&1).unwrap(), &"Dog".to_string());
         assert_eq!(rkyv_map.get(&2).unwrap(), &"Cat".to_string());

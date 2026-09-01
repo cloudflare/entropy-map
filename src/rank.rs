@@ -113,15 +113,14 @@ impl From<u128> for L12Rank {
 impl RankedBits {
     /// Initializes `RankedBits` with a provided bit vector.
     pub fn new(bits: Box<[u64]>) -> Self {
-        let blocks = bits.chunks_exact(64);
-        let remainder = blocks.remainder();
+        let (blocks, remainder) = bits.as_chunks::<64>();
         let mut l12_ranks = Vec::with_capacity(bits.len().div_ceil(64));
         let mut l1_rank: u128 = 0;
 
         for block64 in blocks {
             let mut l12_rank = 0u128;
             let mut sum = 0u16;
-            for (i, block8) in block64.chunks_exact(8).enumerate() {
+            for (i, block8) in block64.as_chunks::<8>().0.iter().enumerate() {
                 sum += block8.iter().map(|&x| x.count_ones() as u16).sum::<u16>();
                 l12_rank += (sum as u128) << (i * 12);
             }

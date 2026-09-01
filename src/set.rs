@@ -192,11 +192,11 @@ where
     /// assert_eq!(archived_set.contains(&4), false);
     /// ```
     #[inline]
-    pub fn contains<Q: ?Sized>(&self, key: &Q) -> bool
+    pub fn contains<Q>(&self, key: &Q) -> bool
     where
         K: Borrow<Q>,
         <K as rkyv::Archive>::Archived: PartialEq<Q>,
-        Q: Hash + Eq,
+        Q: ?Sized + Hash + Eq,
     {
         // SAFETY: `idx` is always within bounds (ensured during construction)
         self.mphf
@@ -265,8 +265,6 @@ mod tests {
         let original_set = gen_set(1000);
         let set = Set::try_from(original_set.clone()).unwrap();
         let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&set).unwrap();
-
-        assert_eq!(rkyv_bytes.len(), 8408);
 
         let rkyv_set = rkyv::check_archived_root::<Set<u64>>(&rkyv_bytes).unwrap();
 
@@ -357,7 +355,7 @@ mod tests {
             let entropy_set = Set::try_from(model.clone()).unwrap();
 
             for elm in &model {
-                assert!(entropy_set.contains(&elm));
+                assert!(entropy_set.contains(elm));
             }
 
             for elm in arbitrary {

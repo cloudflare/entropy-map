@@ -23,9 +23,22 @@ use wyhash::WyHash;
 use crate::mphf::{Mphf, DEFAULT_GAMMA};
 
 /// An efficient, immutable hash map with bit-packed `Vec<u32>` values for optimized space usage.
+///
+/// # Serde and untrusted input
+///
+/// Deserialization performs best-effort consistency checks (key/MPHF alignment, value index
+/// bounds, `num_bits <= 32`), but does **not** verify that every dictionary entry covers its
+/// packed blocks. A crafted payload can therefore pass deserialization and later panic in
+/// [`get_values`](Self::get_values)/[`values`](Self::values)/[`iter`](Self::iter). Only
+/// deserialize payloads you trust; do not treat this type as a security boundary.
 #[derive(Default)]
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
 #[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(
+    feature = "serde",
+    serde(bound(serialize = "K: serde::Serialize, ST: serde::Serialize"))
+)]
 pub struct MapWithDictBitpacked<K, const B: usize = 32, const S: usize = 8, ST = u8, H = WyHash>
 where
     ST: PrimInt + Unsigned,
@@ -38,7 +51,69 @@ where
     /// Points to the value index in the dictionary
     values_index: Box<[usize]>,
     /// Bit-packed dictionary containing values
+    #[cfg_attr(feature = "serde", serde(with = "serde_bytes"))]
     values_dict: Box<[u8]>,
+}
+
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+#[serde(bound(deserialize = "K: serde::Deserialize<'de>, ST: serde::Deserialize<'de>"))]
+struct MapWithDictBitpackedUnchecked<K, const B: usize = 32, const S: usize = 8, ST = u8, H = WyHash>
+where
+    ST: PrimInt + Unsigned,
+    H: Hasher + Default,
+{
+    mphf: Mphf<B, S, ST, H>,
+    keys: Box<[K]>,
+    values_index: Box<[usize]>,
+    #[serde(with = "serde_bytes")]
+    values_dict: Box<[u8]>,
+}
+
+/// Implements `Deserialize` with best-effort structural validation.
+/// See the type-level documentation for the untrusted-input caveat: packed-block
+/// coverage is not yet validated.
+#[cfg(feature = "serde")]
+impl<'de, K, const B: usize, const S: usize, ST, H> serde::Deserialize<'de> for MapWithDictBitpacked<K, B, S, ST, H>
+where
+    K: serde::Deserialize<'de> + Hash,
+    ST: serde::Deserialize<'de> + PrimInt + Unsigned,
+    H: Hasher + Default,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use crate::{ValidateKeyResult, ValidateValueResult};
+        use serde::de::Error;
+
+        let this = MapWithDictBitpackedUnchecked::deserialize(deserializer)?;
+
+        this.mphf.validate_keys(&this.keys).map_err(|e| match e {
+            ValidateKeyResult::InvalidKeyCount => {
+                Error::custom("key count should equal the number of set bits in the MPHF")
+            }
+            ValidateKeyResult::IncorrectKeyOrder => Error::custom("keys should correspond to MPHF index"),
+        })?;
+
+        this.mphf
+            .validate_values(&this.keys, &this.values_index, &this.values_dict)
+            .map_err(|e| match e {
+                ValidateValueResult::KeyValueLenMismatch => Error::custom("key count should equal value count"),
+                ValidateValueResult::InvalidValueIndex => Error::custom("value index is out of bounds of value dict"),
+            })?;
+
+        if this.values_index.iter().any(|&i| this.values_dict[i] > 32) {
+            return Err(Error::custom("value index out of num_bits bounds"));
+        }
+
+        Ok(Self {
+            mphf: this.mphf,
+            keys: this.keys,
+            values_index: this.values_index,
+            values_dict: this.values_dict,
+        })
+    }
 }
 
 /// Errors that can occur when constructing `MapWithDictBitpacked`.
@@ -128,6 +203,11 @@ where
     /// assert_eq!(values, [2]);
     /// assert_eq!(map.get_values(&2, &mut values), false);
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self` was deserialized from a crafted payload whose dictionary entry is
+    /// truncated (see the type-level note about untrusted input).
     #[inline]
     pub fn get_values<Q>(&self, key: &Q, values: &mut [u32]) -> bool
     where
@@ -467,9 +547,9 @@ mod tests {
 
         for n in 1..=max_n {
             for num_bits in 0..=32 {
-                values.truncate(0);
+                values.clear();
                 values.extend((0..n).map(|_| rng.gen::<u32>() & ((1u32 << (num_bits % 32)) - 1)));
-                dict.truncate(0);
+                dict.clear();
 
                 pack_values(&values, &mut dict);
                 assert!(!dict.is_empty());
@@ -553,6 +633,28 @@ mod tests {
         for (k, v) in original_map {
             rkyv_map.get_values(&k, &mut values_buf);
             assert_eq!(v, values_buf);
+        }
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_serde() {
+        // create regular `HashMap`, then `MapWithDictBitpacked`, then serialize to msgpack bytes.
+        let items_num = 1000;
+        let values_num = 10;
+        let original_map = gen_map(items_num, values_num);
+        let map = MapWithDictBitpacked::try_from(original_map.clone()).unwrap();
+
+        let bytes = rmp_serde::to_vec(&map).unwrap();
+        let de: MapWithDictBitpacked<u64> = rmp_serde::from_slice(&bytes).unwrap();
+
+        assert_eq!(de.len(), original_map.len());
+
+        // Test get_values on the deserialized `MapWithDictBitpacked`
+        let mut values_buf = vec![0; values_num];
+        for (k, v) in &original_map {
+            assert!(de.get_values(k, &mut values_buf));
+            assert_eq!(v, &values_buf);
         }
     }
 

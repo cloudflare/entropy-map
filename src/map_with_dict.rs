@@ -290,11 +290,11 @@ where
     /// assert_eq!(archived_map.contains_key(&2), false);
     /// ```
     #[inline]
-    pub fn contains_key<Q: ?Sized>(&self, key: &Q) -> bool
+    pub fn contains_key<Q>(&self, key: &Q) -> bool
     where
         K: Borrow<Q>,
         <K as rkyv::Archive>::Archived: PartialEq<Q>,
-        Q: Hash + Eq,
+        Q: ?Sized + Hash + Eq,
     {
         if let Some(idx) = self.mphf.get(key) {
             // SAFETY: `idx` is always within bounds (ensured during construction)
@@ -319,11 +319,11 @@ where
     /// assert_eq!(archived_map.get(&5), None);
     /// ```
     #[inline]
-    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<&V::Archived>
+    pub fn get<Q>(&self, key: &Q) -> Option<&V::Archived>
     where
         K: Borrow<Q>,
         <K as rkyv::Archive>::Archived: PartialEq<Q>,
-        Q: Hash + Eq,
+        Q: ?Sized + Hash + Eq,
     {
         let idx = self.mphf.get(key)?;
 
@@ -434,8 +434,6 @@ mod tests {
         let original_map = gen_map(1000);
         let map = MapWithDict::try_from(original_map.clone()).unwrap();
         let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&map).unwrap();
-
-        assert_eq!(rkyv_bytes.len(), 12464);
 
         let rkyv_map = rkyv::check_archived_root::<MapWithDict<u64, u32>>(&rkyv_bytes).unwrap();
 

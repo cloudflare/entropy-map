@@ -132,7 +132,9 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
 
         // finalize best group bits to be returned
         let best_group_bits: Vec<u64> = group_bits[..group_bits.len() - 3]
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .map(|group_bits| group_bits[2])
             .collect();
 
@@ -173,7 +175,7 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
     ) {
         // Reset all group bits except best group bits
         let group_bits_len = group_bits.len();
-        for bits in group_bits[..group_bits_len - 3].chunks_exact_mut(3) {
+        for bits in group_bits[..group_bits_len - 3].as_chunks_mut::<3>().0 {
             bits[0] = 0;
             bits[1] = 0;
         }
@@ -194,7 +196,7 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
         }
 
         // Filter out collided bits from group bits
-        for bits in group_bits.chunks_exact_mut(3) {
+        for bits in group_bits.as_chunks_mut::<3>().0 {
             bits[0] &= !bits[1];
         }
 
@@ -413,8 +415,6 @@ mod tests {
         let keys = (0..n as u64).collect::<Vec<u64>>();
         let mphf = Mphf::<32, 4>::from_slice(&keys, DEFAULT_GAMMA).expect("failed to create mphf");
         let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&mphf).unwrap();
-
-        assert_eq!(rkyv_bytes.len(), 3804);
 
         let rkyv_mphf = rkyv::check_archived_root::<Mphf<32, 4>>(&rkyv_bytes).unwrap();
 

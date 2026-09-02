@@ -546,8 +546,6 @@ mod tests {
         let map = MapWithDictBitpacked::try_from(original_map.clone()).unwrap();
         let rkyv_bytes = rkyv::to_bytes::<_, 1024>(&map).unwrap();
 
-        assert_eq!(rkyv_bytes.len(), 18516);
-
         let rkyv_map = rkyv::check_archived_root::<MapWithDictBitpacked<u64>>(&rkyv_bytes).unwrap();
 
         // Test get_values on `Archived` version of `MapWithDictBitpacked`

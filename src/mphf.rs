@@ -476,6 +476,7 @@ mod tests {
     /// Decodes msgpack `bytes` into a generic [`rmpv::Value`], applies `f`, re-encodes,
     /// and deserializes the result as `T`. Used to verify that malformed payloads
     /// are rejected by the custom `Deserialize` impls.
+    #[cfg(feature = "serde")]
     pub(crate) fn decode_mutated<T: serde::de::DeserializeOwned>(
         bytes: &[u8],
         f: impl FnOnce(&mut rmpv::Value),

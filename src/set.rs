@@ -24,15 +24,59 @@ use crate::mphf::{Mphf, MphfError, DEFAULT_GAMMA};
 #[derive(Default)]
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
 #[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(
+    feature = "serde",
+    serde(bound(serialize = "K: serde::Serialize, ST: serde::Serialize"))
+)]
 pub struct Set<K, const B: usize = 32, const S: usize = 8, ST = u8, H = WyHash>
 where
     ST: PrimInt + Unsigned,
     H: Hasher + Default,
 {
     /// Minimally Perfect Hash Function for keys indices retrieval
-    mphf: Mphf<B, S, ST, H>,
+    pub(crate) mphf: Mphf<B, S, ST, H>,
     /// Set keys
     keys: Box<[K]>,
+}
+
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+#[serde(bound(deserialize = "K: serde::Deserialize<'de>, ST: serde::Deserialize<'de>"))]
+struct SetUnchecked<K, const B: usize = 32, const S: usize = 8, ST = u8, H = WyHash>
+where
+    ST: PrimInt + Unsigned,
+    H: Hasher + Default,
+{
+    pub(crate) mphf: Mphf<B, S, ST, H>,
+    keys: Box<[K]>,
+}
+
+#[cfg(feature = "serde")]
+impl<'de, K, const B: usize, const S: usize, ST, H> serde::Deserialize<'de> for Set<K, B, S, ST, H>
+where
+    K: serde::Deserialize<'de> + Hash,
+    ST: serde::Deserialize<'de> + PrimInt + Unsigned,
+    H: Hasher + Default,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use crate::ValidateKeyResult;
+        use serde::de::Error;
+
+        let this = SetUnchecked::deserialize(deserializer)?;
+
+        this.mphf.validate_keys(&this.keys).map_err(|e| match e {
+            ValidateKeyResult::InvalidKeyCount => {
+                Error::custom("key count should equal the number of set bits in the MPHF")
+            }
+            ValidateKeyResult::IncorrectKeyOrder => Error::custom("keys should correspond to MPHF index"),
+        })?;
+
+        Ok(Self { mphf: this.mphf, keys: this.keys })
+    }
 }
 
 impl<K, const B: usize, const S: usize, ST, H> Set<K, B, S, ST, H>
@@ -284,6 +328,24 @@ mod tests {
         assert!(rkyv_set.contains("a"));
         assert!(rkyv_set.contains("b"));
         assert!(!rkyv_set.contains("c"));
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_serde() {
+        // create regular `HashSet`, then `Set`, then serialize to msgpack bytes.
+        let original_set = gen_set(1000);
+        let set = Set::try_from(original_set.clone()).unwrap();
+
+        let bytes = rmp_serde::to_vec(&set).unwrap();
+        let de: Set<u64> = rmp_serde::from_slice(&bytes).unwrap();
+
+        assert_eq!(de.len(), original_set.len());
+
+        // Test contains on the deserialized `Set`
+        for k in original_set.iter() {
+            assert!(de.contains(k));
+        }
     }
 
     macro_rules! proptest_set_model {

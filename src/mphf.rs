@@ -27,6 +27,11 @@ use crate::rank::{RankedBits, RankedBitsAccess};
 #[derive(Default)]
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
 #[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(
+    feature = "serde",
+    serde(bound(serialize = "ST: serde::Serialize", deserialize = "ST: serde::Deserialize<'de>"))
+)]
 pub struct Mphf<const B: usize = 32, const S: usize = 8, ST: PrimInt + Unsigned = u8, H: Hasher + Default = WyHash> {
     /// Ranked bits for efficient rank queries
     ranked_bits: RankedBits,
@@ -35,7 +40,74 @@ pub struct Mphf<const B: usize = 32, const S: usize = 8, ST: PrimInt + Unsigned 
     /// Combined group seeds from all levels
     group_seeds: Box<[ST]>,
     /// Phantom field for the hasher
+    #[cfg_attr(feature = "serde", serde(skip))]
     _phantom_hasher: PhantomData<H>,
+}
+
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+struct MphfUnchecked<const B: usize = 32, const S: usize = 8, ST: PrimInt + Unsigned = u8> {
+    ranked_bits: RankedBits,
+    level_groups: Box<[u32]>,
+    group_seeds: Box<[ST]>,
+}
+
+#[cfg(feature = "serde")]
+impl<'de, const B: usize, const S: usize, ST, H> serde::Deserialize<'de> for Mphf<B, S, ST, H>
+where
+    ST: serde::Deserialize<'de> + PrimInt + Unsigned,
+    H: Hasher + Default,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error;
+        let this = MphfUnchecked::<B, S, ST>::deserialize(deserializer)?;
+
+        if !Self::is_valid_seed_type() {
+            return Err(Error::custom(format!(
+                "ST (u{}) should be able to store (1 << S) - 1",
+                std::mem::size_of::<ST>() * 8
+            )));
+        }
+
+        if this.level_groups.len() > MAX_LEVELS {
+            return Err(Error::custom(format!("MAX_LEVELS {MAX_LEVELS} exceeded")));
+        }
+
+        if !this.level_groups.iter().all(|&x| x > 0) {
+            return Err(Error::custom("no level_groups should be empty"));
+        }
+
+        let level_groups_sum = this
+            .level_groups
+            .iter()
+            .try_fold(0usize, |acc, &x| acc.checked_add(x as usize))
+            .ok_or_else(|| Error::custom("level_groups sum overflowed"))?;
+        if level_groups_sum != this.group_seeds.len() {
+            return Err(Error::custom(
+                "sum of all level_groups should equal length of group_seeds",
+            ));
+        }
+
+        let needed_bits = level_groups_sum
+            .checked_mul(Self::B)
+            .ok_or_else(|| Error::custom("needed_bits overflowed"))?;
+        let ranked_bit_len = this.ranked_bits.bits.len() * 64;
+        if ranked_bit_len < needed_bits {
+            return Err(Error::custom(
+                "count of ranked bits should not be less than the sum of level_groups * B",
+            ));
+        }
+
+        Ok(Self {
+            ranked_bits: this.ranked_bits,
+            level_groups: this.level_groups,
+            group_seeds: this.group_seeds,
+            _phantom_hasher: PhantomData,
+        })
+    }
 }
 
 /// Maximum number of levels to build for MPHF.
@@ -55,6 +127,18 @@ pub enum MphfError {
 /// Default `gamma` parameter for MPHF.
 pub const DEFAULT_GAMMA: f32 = 2.0;
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum ValidateKeyResult {
+    InvalidKeyCount,
+    IncorrectKeyOrder,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum ValidateValueResult {
+    KeyValueLenMismatch,
+    InvalidValueIndex,
+}
+
 impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default> Mphf<B, S, ST, H> {
     /// Ensure that `B` is in [1..64] range
     const B: usize = {
@@ -66,6 +150,60 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
         assert!(S <= 16);
         S
     };
+    /// Ensure `ST` is no larger than u32
+    /// so we don't panic during [`get`]
+    const ST_SIZE: usize = {
+        let sz = std::mem::size_of::<ST>();
+        assert!((sz * 8) >= Self::S);
+        assert!(sz <= 4);
+        sz
+    };
+
+    /// Ensure `ST` can hold `(1 << S) - 1`
+    /// e.g. `2` bytes >= `(1 << 16) - 1`
+    const fn is_valid_seed_type() -> bool {
+        // ST::from((1 << Self::S) - 1).is_some()
+        Self::ST_SIZE * 8 >= Self::S
+    }
+
+    /// Checks if `keys` are valid for `self`
+    pub(crate) fn validate_keys<K>(&self, keys: &[K]) -> Result<(), ValidateKeyResult>
+    where
+        K: Hash + Sized,
+    {
+        // Any get() index is < keys.len()
+        if keys.len() != self.ranked_bits.count_ones() {
+            return Err(ValidateKeyResult::InvalidKeyCount);
+        }
+
+        // Keys are ordered by their MPHF index else contains() gives wrong answers
+        if keys.iter().enumerate().any(|(i, k)| self.get(k) != Some(i)) {
+            return Err(ValidateKeyResult::IncorrectKeyOrder);
+        }
+
+        Ok(())
+    }
+
+    /// Checks if `values` are valid for `self`
+    pub(crate) fn validate_values<K, V>(
+        &self,
+        keys: &[K],
+        values_indices: &[usize],
+        values_dict: &[V],
+    ) -> Result<(), ValidateValueResult>
+    where
+        K: Hash + Sized,
+    {
+        if keys.len() != values_indices.len() {
+            return Err(ValidateValueResult::KeyValueLenMismatch);
+        }
+
+        if values_indices.iter().any(|&i| i >= values_dict.len()) {
+            return Err(ValidateValueResult::InvalidValueIndex);
+        }
+
+        Ok(())
+    }
 
     /// Initializes `Mphf` using slice of `keys` and parameter `gamma`.
     pub fn from_slice<K: Hash>(keys: &[K], gamma: f32) -> Result<Self, MphfError> {
@@ -73,7 +211,7 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
             return Err(InvalidGammaParameter);
         }
 
-        if ST::from((1 << Self::S) - 1).is_none() {
+        if !Self::is_valid_seed_type() {
             return Err(InvalidSeedType);
         }
 
@@ -331,6 +469,21 @@ mod tests {
     use std::collections::HashSet;
     use test_case::test_case;
 
+    /// Decodes msgpack `bytes` into a generic [`rmpv::Value`], applies `f`, re-encodes,
+    /// and deserializes the result as `T`. Used to verify that malformed payloads
+    /// are rejected by the custom `Deserialize` impls.
+    pub(crate) fn decode_mutated<T: serde::de::DeserializeOwned>(
+        bytes: &[u8],
+        f: impl FnOnce(&mut rmpv::Value),
+    ) -> Result<T, rmp_serde::decode::Error> {
+        let mut value = rmpv::decode::value::read_value(&mut &bytes[..]).unwrap();
+        f(&mut value);
+
+        let mut out = Vec::new();
+        rmpv::encode::write_value(&mut out, &value).unwrap();
+        rmp_serde::from_slice(&out)
+    }
+
     /// Helper function that contains the test logic
     fn test_mphfs_impl<const B: usize, const S: usize>(n: usize, gamma: f32) -> String {
         let keys = (0..n as u64).collect::<Vec<u64>>();
@@ -431,5 +584,62 @@ mod tests {
             }
         }
         assert_eq!(set.len(), n);
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_serde() {
+        let n = 10000;
+        let keys = (0..n as u64).collect::<Vec<u64>>();
+        let mphf = Mphf::<32, 4>::from_slice(&keys, DEFAULT_GAMMA).expect("failed to create mphf");
+
+        // Serialize via msgpack and deserialize back. The PHF must be fully
+        // restored without recomputation.
+        let bytes = rmp_serde::to_vec(&mphf).unwrap();
+        let de: Mphf<32, 4> = rmp_serde::from_slice(&bytes).unwrap();
+
+        // Ensure that all keys are assigned the same unique index by both
+        // the original and the deserialized MPHFs.
+        let mut set = HashSet::with_capacity(n);
+        for key in &keys {
+            let idx = mphf.get(key).unwrap();
+            let de_idx = de.get(key).unwrap();
+
+            assert_eq!(idx, de_idx);
+            assert!(idx < n, "idx = {} n = {}", idx, n);
+            assert!(set.insert(idx), "duplicate idx = {} for key {}", idx, key);
+        }
+        assert_eq!(set.len(), n);
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_serde_rejects_invalid_structures() {
+        use rmpv::Value;
+
+        let keys = (0..1000u64).collect::<Vec<_>>();
+        let mphf = Mphf::<32, 4>::from_slice(&keys, DEFAULT_GAMMA).unwrap();
+        let bytes = rmp_serde::to_vec(&mphf).unwrap();
+
+        // drop one group seed -> sum(level_groups) != group_seeds.len()
+        assert!(decode_mutated::<Mphf<32, 4>>(&bytes, |v| {
+            if let Value::Array(f) = v {
+                if let Value::Array(seeds) = &mut f[2] {
+                    seeds.pop();
+                }
+            }
+        })
+        .is_err());
+
+        // drop one u64 word of ranked bits (stays 8-aligned) -> bits.len()*64 < sum*B
+        assert!(decode_mutated::<Mphf<32, 4>>(&bytes, |v| {
+            if let Value::Array(f) = v {
+                if let Value::Binary(bits) = &mut f[0] {
+                    let n = bits.len();
+                    bits.truncate(n - 8);
+                }
+            }
+        })
+        .is_err());
     }
 }

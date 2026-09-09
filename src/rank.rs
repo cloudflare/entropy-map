@@ -59,9 +59,53 @@ pub trait RankedBitsAccess {
 #[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
 pub struct RankedBits {
     /// The bit vector represented as an array of u64 integers.
-    bits: Box<[u64]>,
+    pub(crate) bits: Box<[u64]>,
     /// Precomputed rank information for L1 and L2 blocks.
     l12_ranks: Box<[L12Rank]>,
+}
+
+/// Custom Serde logic that stores `Box<[u64]>` as a single little-endian byte blob.
+///
+/// Unlike the default `seq` encoding (which in msgpack frames each `u64` as a
+/// `uint64` tag + 8 bytes = 9 bytes/element), this emits one `bin` blob via
+/// `serialize_bytes`, eliminating per-element framing. Endianness is explicit
+/// (little-endian) so the on-wire form is portable across architectures,
+/// consistent with the crate's existing `L12Rank` LE convention.
+#[cfg(feature = "serde")]
+impl serde::Serialize for RankedBits {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut out = serde_bytes::ByteBuf::with_capacity(self.bits.len() * 8);
+        for word in &self.bits {
+            out.extend_from_slice(&word.to_le_bytes());
+        }
+        out.serialize(serializer)
+    }
+}
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for RankedBits {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let buf = serde_bytes::ByteBuf::deserialize(deserializer)?;
+        if buf.len() % 8 != 0 {
+            return Err(serde::de::Error::invalid_length(
+                buf.len(),
+                &"a byte length that is a multiple of 8",
+            ));
+        }
+        let bits = buf
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|&c| u64::from_le_bytes(c))
+            .collect::<Box<[u64]>>();
+
+        Ok(RankedBits::new(bits))
+    }
 }
 
 /// L12Rank represents l1 and l2 bit ranks stored inside 16 bytes (little endian).
@@ -71,7 +115,8 @@ pub struct RankedBits {
 #[derive(Debug)]
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
 #[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
-pub struct L12Rank([u8; 16]);
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct L12Rank(#[cfg_attr(feature = "serde", serde(with = "serde_bytes"))] [u8; 16]);
 
 /// Trait used to access archived and non-archived L1 and L2 ranks
 pub trait L12RankAccess {
@@ -111,6 +156,11 @@ impl From<u128> for L12Rank {
 }
 
 impl RankedBits {
+    /// Returns the number of ones in `bits`
+    pub fn count_ones(&self) -> usize {
+        self.bits.iter().map(|x| x.count_ones() as usize).sum()
+    }
+
     /// Initializes `RankedBits` with a provided bit vector.
     pub fn new(bits: Box<[u64]>) -> Self {
         let (blocks, remainder) = bits.as_chunks::<64>();
@@ -203,6 +253,23 @@ mod tests {
                     idx
                 );
             }
+        }
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_serde() {
+        let rng = rand::thread_rng();
+        let bits: Vec<u64> = rng.sample_iter(Standard).take(1001).collect();
+        let ranked_bits = RankedBits::new(bits.clone().into_boxed_slice());
+
+        let bytes = rmp_serde::to_vec(&ranked_bits).unwrap();
+        let de: RankedBits = rmp_serde::from_slice(&bytes).unwrap();
+
+        // The deserialized `RankedBits` must answer every `rank` query identically
+        // to the original (the whole point of persisting the PHF artifacts).
+        for idx in 0..bits.len() * 64 {
+            assert_eq!(ranked_bits.rank(idx), de.rank(idx), "rank mismatch at {}", idx);
         }
     }
 }

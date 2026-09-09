@@ -21,6 +21,11 @@ use crate::mphf::{Mphf, MphfError, DEFAULT_GAMMA};
 #[derive(Default)]
 #[cfg_attr(feature = "rkyv_derive", derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize))]
 #[cfg_attr(feature = "rkyv_derive", archive_attr(derive(rkyv::CheckBytes)))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(
+    feature = "serde",
+    serde(bound(serialize = "K: serde::Serialize, V: serde::Serialize, ST: serde::Serialize"))
+)]
 pub struct MapWithDict<K, V, const B: usize = 32, const S: usize = 8, ST = u8, H = WyHash>
 where
     ST: PrimInt + Unsigned,
@@ -34,6 +39,60 @@ where
     values_index: Box<[usize]>,
     /// Map unique values
     values_dict: Box<[V]>,
+}
+
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+#[serde(bound(deserialize = "K: serde::Deserialize<'de>, V: serde::Deserialize<'de>, ST: serde::Deserialize<'de>"))]
+struct MapWithDictUnchecked<K, V, const B: usize = 32, const S: usize = 8, ST = u8, H = WyHash>
+where
+    ST: PrimInt + Unsigned,
+    H: Hasher + Default,
+{
+    mphf: Mphf<B, S, ST, H>,
+    keys: Box<[K]>,
+    values_index: Box<[usize]>,
+    values_dict: Box<[V]>,
+}
+
+#[cfg(feature = "serde")]
+impl<'de, K, V, const B: usize, const S: usize, ST, H> serde::Deserialize<'de> for MapWithDict<K, V, B, S, ST, H>
+where
+    K: serde::Deserialize<'de> + Hash,
+    V: serde::Deserialize<'de>,
+    ST: serde::Deserialize<'de> + PrimInt + Unsigned,
+    H: Hasher + Default,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use crate::{ValidateKeyResult, ValidateValueResult};
+        use serde::de::Error;
+
+        let this = MapWithDictUnchecked::<K, V, B, S, ST, H>::deserialize(deserializer)?;
+
+        this.mphf.validate_keys(&this.keys).map_err(|e| match e {
+            ValidateKeyResult::InvalidKeyCount => {
+                Error::custom("key count should equal the number of set bits in the MPHF")
+            }
+            ValidateKeyResult::IncorrectKeyOrder => Error::custom("keys should correspond to MPHF index"),
+        })?;
+
+        this.mphf
+            .validate_values(&this.keys, &this.values_index, &this.values_dict)
+            .map_err(|e| match e {
+                ValidateValueResult::KeyValueLenMismatch => Error::custom("key count should equal value count"),
+                ValidateValueResult::InvalidValueIndex => Error::custom("value index is out of bounds of value dict"),
+            })?;
+
+        Ok(Self {
+            mphf: this.mphf,
+            keys: this.keys,
+            values_index: this.values_index,
+            values_dict: this.values_dict,
+        })
+    }
 }
 
 impl<K, V, const B: usize, const S: usize, ST, H> MapWithDict<K, V, B, S, ST, H>
@@ -462,6 +521,45 @@ mod tests {
         assert!(rkyv_map.contains_key("b"));
         assert_eq!(map.get("c"), None);
         assert!(!rkyv_map.contains_key("c"));
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_serde() {
+        // create regular `HashMap`, then `MapWithDict`, then serialize to msgpack bytes.
+        let original_map = gen_map(1000);
+        let map = MapWithDict::try_from(original_map.clone()).unwrap();
+
+        let bytes = rmp_serde::to_vec(&map).unwrap();
+        let de: MapWithDict<u64, u32> = rmp_serde::from_slice(&bytes).unwrap();
+
+        assert_eq!(de.len(), original_map.len());
+
+        // Test get on the deserialized `MapWithDict`
+        for (k, v) in original_map.iter() {
+            assert_eq!(de.get(k), Some(v));
+        }
+
+        // Test iter on the deserialized `MapWithDict`
+        for (&k, &v) in de.iter() {
+            assert_eq!(original_map.get(&k), Some(&v));
+        }
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_serde_get_borrow() {
+        let original_map = HashMap::from_iter([("a".to_string(), ()), ("b".to_string(), ())]);
+        let map = MapWithDict::try_from(original_map).unwrap();
+        let bytes = rmp_serde::to_vec(&map).unwrap();
+        let de: MapWithDict<String, ()> = rmp_serde::from_slice(&bytes).unwrap();
+
+        assert_eq!(de.get("a"), Some(&()));
+        assert!(de.contains_key("a"));
+        assert_eq!(de.get("b"), Some(&()));
+        assert!(de.contains_key("b"));
+        assert_eq!(de.get("c"), None);
+        assert!(!de.contains_key("c"));
     }
 
     macro_rules! proptest_map_with_dict_model {

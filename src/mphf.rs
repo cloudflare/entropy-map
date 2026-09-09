@@ -127,12 +127,14 @@ pub enum MphfError {
 /// Default `gamma` parameter for MPHF.
 pub const DEFAULT_GAMMA: f32 = 2.0;
 
+#[cfg(feature = "serde")]
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ValidateKeyResult {
     InvalidKeyCount,
     IncorrectKeyOrder,
 }
 
+#[cfg(feature = "serde")]
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ValidateValueResult {
     KeyValueLenMismatch,
@@ -167,6 +169,7 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
     }
 
     /// Checks if `keys` are valid for `self`
+    #[cfg(feature = "serde")]
     pub(crate) fn validate_keys<K>(&self, keys: &[K]) -> Result<(), ValidateKeyResult>
     where
         K: Hash + Sized,
@@ -185,6 +188,7 @@ impl<const B: usize, const S: usize, ST: PrimInt + Unsigned, H: Hasher + Default
     }
 
     /// Checks if `values` are valid for `self`
+    #[cfg(feature = "serde")]
     pub(crate) fn validate_values<K, V>(
         &self,
         keys: &[K],

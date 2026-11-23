@@ -128,7 +128,10 @@ pub trait L12RankAccess {
     fn l12_ranks(&self, l1_pos: usize, l2_pos: usize) -> (usize, usize) {
         let l12_rank = self.l12_rank(l1_pos);
         let l1_rank = (l12_rank & 0xFFFFFFFFFFF) as usize;
-        let l2_rank = ((l12_rank >> (32 + 12 * l2_pos)) & 0xFFF) as usize;
+        // L2 entry `i` (bits 44 + 12 * i) is the rank at the end of L2 block `i`, so L2 block
+        // `l2_pos` reads entry `l2_pos - 1`. The first L2 block starts at the L1 rank: reading
+        // bits 32..44 for it would pick up the top of the 44-bit L1 rank.
+        let l2_rank = ((l12_rank >> (32 + 12 * l2_pos)) & 0xFFF) as usize * (l2_pos > 0) as usize;
         (l1_rank, l2_rank)
     }
 }
@@ -253,6 +256,16 @@ mod tests {
                     idx
                 );
             }
+        }
+    }
+
+    #[test]
+    fn test_first_l2_block_with_large_l1_rank() {
+        // L1 rank needs more than 32 bits once 2^32 set bits come before the L1 block.
+        for l1_rank in [1u128 << 32, (1 << 44) - 1] {
+            let l12_ranks: Box<[L12Rank]> = vec![((7u128 << 44) | l1_rank).into()].into_boxed_slice();
+            assert_eq!(l12_ranks.l12_ranks(0, 0), (l1_rank as usize, 0));
+            assert_eq!(l12_ranks.l12_ranks(0, 1), (l1_rank as usize, 7));
         }
     }
 
